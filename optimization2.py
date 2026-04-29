@@ -2,15 +2,16 @@ import math
 import ast
 from typing import Optional, Tuple, Dict, Set, List
 from collections import defaultdict
+from functools import lru_cache
 
-BASE=10
+BASE=2
 COST = {
     "add": 1/2,
     "sub": 1/1,
     "mul": 1/1,
     "exp": 1 / 1.1,
-    "powbase": 0.0,
-    "lit": 0.0,
+    "powbase": 0.00,
+    "lit": 0.00,
 }
 
 def evaluate_cost(expr: str) -> tuple[int, float]:
@@ -62,7 +63,7 @@ def synthesize_optimal_with_exp(
     
     # Cache for memoization (limited to prevent memory explosion)
     cache = {}
-    
+    @lru_cache(maxsize=1000)
     def solve(value: int, depth: int = 0, max_depth: int = 2) -> Tuple[float, str]:
         """Recursive solver with depth limit."""
         # Return cached result if available
@@ -119,7 +120,7 @@ def synthesize_optimal_with_exp(
                 best_expr = f"({expr_a}*{expr_b})"
         
         # Try breaking value into base ** exp
-        for base in range(2, min(100, value)):
+        for base in range(2, min(31, value)):
             if base in disallowed:
                 continue
             
@@ -229,8 +230,11 @@ def synthesize_optimal_with_exp(
         # Cache and return result
         cache[(value,depth)] = (best_cost, best_expr)
         return best_cost, best_expr
+    @lru_cache(maxsize=10000)
     def simple_synthesis(value: int) -> Tuple[float, str]:
-        def compress_streak(start: int, end: int, BASE: int, COST) -> Tuple[float, str]:
+        if value<=max_ext: return COST["lit"], str(value)
+        @lru_cache(maxsize=1000)
+        def compress_streak(start: int, end: int) -> Tuple[float, str]:
             """
             Compress b^start + ... + b^end into best form.
             Returns (cost, expr)
@@ -327,12 +331,16 @@ def synthesize_optimal_with_exp(
                     j += 1
 
                 end = digits[j][1]
-
-                # --- use your streak compressor ---
-                cost_s, expr_s = compress_streak(start, end, BASE, COST)
-                parts.append(expr_s)
-                total_cost += cost_s
-
+                length=end-start+1
+                if length >= 3:
+                    cost_s, expr_s = compress_streak(start, end)
+                    parts.append(expr_s)
+                    total_cost += cost_s
+                else:
+                    # fallback: just emit normal terms
+                    for p in range(start, end + 1):
+                        parts.append(f"({BASE}**{p})")
+                        total_cost += COST["powbase"]
                 i = j + 1
             else:
                 # normal term: digit * BASE^power
@@ -407,6 +415,7 @@ if __name__ == "__main__":
     import time
     
     test_cases = [
+        (56,set(),26),
         (100, set(), 26),
         (22899, {10}, 26),
         (1000, set(), 26),
@@ -424,14 +433,13 @@ if __name__ == "__main__":
         (64, set(), 26),          # 4**3 or 8**2
         (125, set(), 26),         # 5**3
         (216, set(), 26),         # 6**3
-        (6896,set(),26)
+        (6896,set(),26),
     ]
     
     print("Testing synthesis with exponentiation patterns...")
     print("=" * 60)
     print(f"BASE: {BASE}")
     print(f"Cost configuration: {COST}")
-    print(f"exp cost: {COST['exp']:.3f}")
     
     for target, disallowed, max_ext in test_cases:
         print(f"\nTarget: {target}")

@@ -47,7 +47,7 @@ def update_bits(event=None):
 # GUI
 # -------------------------------------------------------
 root = tk.Tk()
-root.title("Integer to Bit Dump & Minimal-Term")
+root.title("Beltmatic numbers optimizer")
 root.minsize(700, 400)
 
 root.grid_rowconfigure(2, weight=1)
