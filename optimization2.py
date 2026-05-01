@@ -126,6 +126,47 @@ def build_balanced(nodes):
                 nxt.append(("add", left, right, None))
         level = nxt
     return level[0] if level else None
+
+
+def fold_pow(node):
+    # Only fold a ** b when both are constants
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Pow):
+        if node.left.value == BASE:
+            return ast.Constant(value=node.left.value ** node.right.value)
+    return node
+
+def flatten_add(node):
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return flatten_add(node.left) + flatten_add(node.right)
+    else:
+        return [node]
+
+def transform(node):
+    # Recursively process children first
+    for field, value in ast.iter_fields(node):
+        if isinstance(value, ast.AST):
+            setattr(node, field, transform(value))
+        elif isinstance(value, list):
+            setattr(node, field, [transform(v) if isinstance(v, ast.AST) else v for v in value])
+
+    # Then apply local rewrite
+    node = fold_pow(node)
+    return node
+
+def rebuild_add(terms):
+    expr = terms[0]
+    for term in terms[1:]:
+        expr = ast.BinOp(left=expr, op=ast.Add(), right=term)
+    return expr
+
+def simplify_expr(expr_str):
+    tree = ast.parse(expr_str, mode="eval")
+    tree = transform(tree)
+
+    terms = flatten_add(tree.body)
+    new_tree = rebuild_add(terms)
+
+    return ast.unparse(new_tree)
 def synthesize_optimal_with_exp(
     target: int,
     disallowed: Optional[set[int]] = None,
@@ -177,10 +218,11 @@ def synthesize_optimal_with_exp(
             if BASE == 2:
                 if value & (value - 1) == 0:
                     n = value.bit_length() - 1
-                    return COST["powbase"], ("powbase", n, None, None)
+                    if n not in disallowed:
+                        return COST["powbase"], ("powbase", n, None, None)
                 else:
                     n = int(round(math.log(value, BASE)))
-                    if BASE ** n == value:
+                    if BASE ** n == value and n not in disallowed:
                         return COST["powbase"], ("powbase", n, None, None)
 
         digits = []
@@ -292,16 +334,17 @@ def synthesize_optimal_with_exp(
     def solve(value: int, depth: int = 0) -> tuple[float, Node]:
         nonlocal nodes
         nodes += 1
+        if value not in disallowed:
+            if value <= max_ext:
+                return COST["lit"], ("lit", None,None,value)
 
-        if value <= max_ext:
-            return COST["lit"], ("lit", None,None,value)
-
-        if is_power(value, BASE):
-            if BASE == 2:
-                n = value.bit_length() - 1
-            else:
-                n = int(round(math.log(value, BASE)))
-            return COST["powbase"], ("powbase", n, None, None)
+            if is_power(value, BASE):
+                if BASE == 2:
+                    n = value.bit_length() - 1
+                else:
+                    n = int(round(math.log(value, BASE)))
+                if n not in disallowed:
+                    return COST["powbase"], ("powbase", n, None, None)
 
         if depth > depth_limit:
             return simple_synthesis(value)
@@ -419,10 +462,7 @@ def synthesize_optimal_with_exp(
 
     if verbose:
         print(f"nodes: {nodes}")
-    expr=render(_ast)
-    for k in range(32,-1,-1):
-        expr=expr.replace(f"({BASE}**{k})", str(BASE**k))
-        expr=expr.replace(f"{BASE}**{k}", str(BASE**k))
+    expr=simplify_expr(render(_ast))
     return cost, expr
 
 
@@ -430,7 +470,7 @@ def optimize_sum_with_U(target: list[int], U: int) -> str:
     total_target = sum(target)
     cost, expr = synthesize_optimal_with_exp(
         total_target,
-        disallowed={10},
+        disallowed=set(),
         max_ext=U,
         max_val=(1 << 31) - 1,
         verbose=False,
