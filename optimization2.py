@@ -105,7 +105,7 @@ else:
 _EXACT_POWER_MAP: dict[int, list[tuple[int, int]]] = {}
 _EXACT_POWER_LIST: list[tuple[int, int, int]] = []  # (value, base, exp)
 
-for b in range(2, math.isqrt(_MAX_PRECOMP_VAL)):
+for b in range(2, math.isqrt(_MAX_PRECOMP_VAL)+1):
     p = b * b
     e = 2
     while p <= _MAX_PRECOMP_VAL:
@@ -188,6 +188,26 @@ def simplify_expr(expr_str):
     return ast.unparse(new_tree)
 
 
+@lru_cache(maxsize=None)
+def divisor_pairs(n: int) -> tuple[tuple[int, int], ...]:
+    """Exact factor pairs only. Odd scan cuts half the work immediately."""
+    if n < 4:
+        return tuple()
+
+    out = []
+    if n % 2 == 0:
+        out.append((2, n // 2))
+
+    r = math.isqrt(n)
+    a = 3
+    while a <= r:
+        if n % a == 0:
+            out.append((a, n // a))
+        a += 2
+
+    return tuple(out)
+
+
 def synthesize_optimal_with_exp(
     target: int,
     disallowed: Optional[set[int]] = None,
@@ -208,26 +228,19 @@ def synthesize_optimal_with_exp(
         base_powers = [
             BASE**e for e in range(1, max_base_exp + 1) if BASE**e <= max_val
         ]
-
     @lru_cache(maxsize=None)
-    def divisor_pairs(n: int) -> tuple[tuple[int, int], ...]:
-        """Exact factor pairs only. Odd scan cuts half the work immediately."""
-        if n < 4:
-            return tuple()
+    def build_power_linear(p):
+        # 2^p = 2 * 2^(p-1)
+        if p == 0:
+            return COST["lit"], ("lit", None, None, 1)
 
-        out = []
-        if n % 2 == 0:
-            out.append((2, n // 2))
+        if p not in disallowed:
+            return COST["powbase"], ("powbase", p, None, None)
 
-        r = math.isqrt(n)
-        a = 3
-        while a <= r:
-            if n % a == 0:
-                out.append((a, n // a))
-            a += 2
-
-        return tuple(out)
-
+        cost_sub, expr_sub = build_power_linear(p - 1)
+        cost = cost_sub + COST["mul"] + COST["powbase"]  # multiply by 2^1
+        expr = ("mul", ("powbase", 1, None, None), expr_sub, None)
+        return cost, expr
     @lru_cache(maxsize=None)
     def simple_synthesis(value: int) -> tuple[float, Node]:
         if value <= max_ext and value not in disallowed:
@@ -278,16 +291,43 @@ def synthesize_optimal_with_exp(
                 length = end - start + 1
 
                 if length >= 3:
-                    streak_parts = [
-                        ("powbase", p, None, None) for p in range(start, end + 1)
-                    ]
-                    parts.append(build_balanced(streak_parts))
-                    total_cost += length * COST["powbase"] + (length - 1) * COST["add"]
+                    streak_parts = []
+                    streak_cost = 0.0
+                    valid = True
+
+                    for p in range(start, end + 1):
+                        if p in disallowed:
+                            valid = False
+                            break
+                        streak_parts.append(("powbase", p, None, None))
+                        streak_cost += COST["powbase"]
+
+                    if valid:
+                        parts.append(build_balanced(streak_parts))
+                        total_cost += streak_cost + (len(streak_parts) - 1) * COST["add"]
+                    else:
+                        # fallback: handle each term individually
+                        for p in range(start, end + 1):
+                            if p in disallowed:
+                                # build BASE**p indirectly
+                                val = BASE**p
+                                cost_p, expr_p = build_power_linear(val)
+                                parts.append(expr_p)
+                                total_cost += cost_p
+                            else:
+                                parts.append(("powbase", p, None, None))
+                                total_cost += COST["powbase"]
+
                 else:
                     for p in range(start, end + 1):
-                        parts.append(("powbase", p, None, None))
-                        total_cost += COST["powbase"]
-
+                        if p in disallowed:
+                            val = BASE**p
+                            cost_p, expr_p = build_power_linear(val)
+                            parts.append(expr_p)
+                            total_cost += cost_p
+                        else:
+                            parts.append(("powbase", p, None, None))
+                            total_cost += COST["powbase"]
                 i = j + 1
             else:
                 if start == 0:
@@ -385,17 +425,18 @@ def synthesize_optimal_with_exp(
         for anchor in base_powers:
             if anchor == value:
                 continue
-
+            if BASE == 2:
+                n = anchor.bit_length() - 1
+            else:
+                n = int(round(math.log(anchor, BASE)))
+            if n in disallowed:
+                continue
             if anchor > value:
                 k = anchor - value
                 if k <= max_ext and k not in disallowed:
                     cost_k, expr_k = solve(k, depth + 1)
                     total = COST["powbase"] + cost_k + COST["sub"]
                     if total < best_cost:
-                        if BASE == 2:
-                            n = anchor.bit_length() - 1
-                        else:
-                            n = int(round(math.log(anchor, BASE)))
                         best_cost = total
                         best_expr = ("sub", ("powbase", n, None, None), expr_k, None)
             else:
@@ -404,10 +445,6 @@ def synthesize_optimal_with_exp(
                     cost_k, expr_k = solve(k, depth + 1)
                     total = COST["powbase"] + cost_k + COST["add"]
                     if total < best_cost:
-                        if BASE == 2:
-                            n = anchor.bit_length() - 1
-                        else:
-                            n = int(round(math.log(anchor, BASE)))
                         best_cost = total
                         best_expr = ("add", ("powbase", n, None, None), expr_k, None)
 
@@ -540,6 +577,7 @@ if __name__ == "__main__":
         (6896, set(), 26),
         (3955, set(), 26),
         (166375, set(), 55),
+        (1368794382, set(), 27),
     ]
 
     print("Testing synthesis with exponentiation patterns...")
@@ -583,6 +621,10 @@ if __name__ == "__main__":
             elif target == 3955:
                 print(
                     f"  Alternative: 19 * 26 * 8 + 3 = cost {evaluate_cost('19 * 26 * 8 + 3')[1]:.3f}"
+                )
+            elif target == 1368794382:
+                print(
+                    f"  Alternative: 268435456 + (1024 + 15) * (25 * 1024 + 18) + 1073741824 = cost {evaluate_cost('268435456 + (1024 + 15) * (25 * 1024 + 18) + 1073741824')[1]:.3f}"
                 )
         else:
             print(f"  ✗ Wrong value: {actual_value} != {target}")
