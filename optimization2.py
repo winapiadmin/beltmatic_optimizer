@@ -10,15 +10,359 @@ COST = {
     "sub": 1 / 1,
     "mul": 1 / 1,
     "exp": 1 / 1.1,
-    "powbase": 0.00,
+    "powbase": 10000.00,
     "lit": 0.00,
 }
 
-
-# =========================================================
-# AST NODE
-# =========================================================
+# (operation, a, b, value)
+# powbase: BASE**value
+# add, sub, mul, exp: a (operation) b
+# lit: value
 Node = tuple[str, object, object, Optional[float]]
+
+
+def synthesize_optimal_with_exp(
+    target: int,
+    disallowed: Optional[set[int]] = None,
+    max_ext: int = 26,
+    max_val: int = (1 << 31) - 1,
+    verbose: bool = False,
+) -> tuple[float, str]:
+
+    disallowed = set() if disallowed is None else set(disallowed)
+    nodes = 0
+
+    # Keep base powers local to the current max_val.
+    max_base_exp = int(math.log(max_val, BASE))
+    base_powers = [BASE**e for e in range(1, max_base_exp + 1) if BASE**e <= max_val]
+
+    depth_limit = 3
+
+    # Builds BASE^p
+    @lru_cache(maxsize=None)
+    def build_power_linear(p):
+        if p == 0:
+            return COST["lit"], ("lit", None, None, 1)
+
+        if p not in disallowed:
+            return COST["powbase"], ("powbase", p, None, None)
+
+        cost_sub, expr_sub = build_power_linear(p - 1)
+        cost = cost_sub + COST["mul"] + COST["powbase"]
+        expr = ("mul", ("powbase", 1, None, None), expr_sub, None)
+        return cost, expr
+
+    @lru_cache(maxsize=None)
+    def simple_synthesis(value: int) -> tuple[float, Node]:
+        if value <= max_ext and value not in disallowed:
+            return COST["lit"], ("lit", None, None, value)
+
+        if value > 0:
+            if BASE == 2:
+                if value & (value - 1) == 0:
+                    n = value.bit_length() - 1
+                    if n not in disallowed:
+                        return COST["powbase"], ("powbase", n, None, None)
+            else:
+                n = int(round(math.log(value, BASE)))
+                if BASE**n == value and n not in disallowed:
+                    return COST["powbase"], ("powbase", n, None, None)
+
+        digits = []
+        temp = value
+        power = 0
+        while temp > 0:
+            digit = temp % BASE
+            if digit != 0:
+                digits.append((digit, power))
+            temp //= BASE
+            power += 1
+
+        if not digits:
+            return COST["lit"], ("lit", None, None, 0)
+
+        # digits.sort(key=lambda x: x[1])
+        parts = []
+        total_cost = 0.0
+        i = 0
+
+        while i < len(digits):
+            digit, start = digits[i]
+
+            if digit == 1:
+                j = i
+                while (
+                    j + 1 < len(digits)
+                    and digits[j + 1][0] == 1
+                    and digits[j + 1][1] == digits[j][1] + 1
+                ):
+                    j += 1
+
+                end = digits[j][1]
+                length = end - start + 1
+
+                if length >= 3:
+                    streak_parts = []
+                    streak_cost = 0.0
+                    valid = True
+
+                    for p in range(start, end + 1):
+                        if p in disallowed:
+                            valid = False
+                            break
+                        streak_parts.append(("powbase", p, None, None))
+                        streak_cost += COST["powbase"]
+
+                    if valid:
+                        parts.append(build_balanced(streak_parts))
+                        total_cost += (
+                            streak_cost + (len(streak_parts) - 1) * COST["add"]
+                        )
+                    else:
+                        # fallback: handle each term individually
+                        for p in range(start, end + 1):
+                            if p in disallowed:
+                                # build BASE**p indirectly
+                                val = BASE**p
+                                cost_p, expr_p = build_power_linear(p)
+                                parts.append(expr_p)
+                                total_cost += cost_p
+                            else:
+                                parts.append(("powbase", p, None, None))
+                                total_cost += COST["powbase"]
+
+                else:
+                    for p in range(start, end + 1):
+                        if p in disallowed:
+                            val = BASE**p
+                            cost_p, expr_p = build_power_linear(val)
+                            parts.append(expr_p)
+                            total_cost += cost_p
+                        else:
+                            parts.append(("powbase", p, None, None))
+                            total_cost += COST["powbase"]
+                i = j + 1
+            else:
+                if start == 0:
+                    parts.append(("lit", None, None, digit))
+                    total_cost += COST["lit"]
+                else:
+                    parts.append(
+                        (
+                            "mul",
+                            ("lit", None, None, digit),
+                            ("powbase", start, None, None),
+                            None,
+                        )
+                    )
+                    total_cost += COST["powbase"] + COST["mul"] + COST["lit"]
+                i += 1
+
+        expr = build_balanced(parts)
+        if len(parts) > 1:
+            total_cost += (len(parts) - 1) * COST["add"]
+
+        return total_cost, expr
+
+    @lru_cache(maxsize=None)
+    def near_exact_powers(value: int) -> tuple[tuple[int, int, int], ...]:
+        lo = max(0, value - max_ext)
+        hi = min(max_val, value + max_ext)
+        left = bisect.bisect_left(_EXACT_POWER_VALUES, lo)
+        right = bisect.bisect_right(_EXACT_POWER_VALUES, hi)
+        return tuple(_EXACT_POWER_LIST[left:right])
+
+    @lru_cache(maxsize=None)
+    def candidate_add_splits(value: int) -> tuple[int, ...]:
+        if value <= 1:
+            return tuple()
+
+        cand = set()
+
+        seeds = (1, 2, 3, 4, 5, 6, 7, 8, 13, 21, max_ext)
+        for x in seeds:
+            if 0 < x < value:
+                cand.add(x)
+                cand.add(value - x)
+
+        # Powers of BASE and their complements.
+        idx = bisect.bisect_left(base_powers, value)
+        for i in (idx - 3, idx - 2, idx - 1, idx, idx + 1):
+            if 0 <= i < len(base_powers):
+                p = base_powers[i]
+                if p < value:
+                    cand.add(p)
+                    cand.add(value - p)
+
+        # Small multiples of nearby powers.
+        for i in range(max(0, idx - 2), min(len(base_powers), idx + 3)):
+            p = base_powers[i]
+            if p <= 1:
+                continue
+            max_k = min(32, (value - 1) // p)
+            for k in range(2, max_k + 1):
+                x = k * p
+                if x < value:
+                    cand.add(x)
+                    cand.add(value - x)
+
+        # Midpoint bias.
+        half = value // 2
+        for delta in (0, 1, 2, 3, 5, 8, 13):
+            for x in (half - delta, half + delta):
+                if 1 < x < value:
+                    cand.add(x)
+
+        return tuple(sorted(cand))
+
+    @lru_cache(maxsize=None)
+    def solve(value: int, depth: int = 0) -> tuple[float, Node]:
+        nonlocal nodes
+        nodes += 1
+        if value not in disallowed:
+            if value <= max_ext:
+                return COST["lit"], ("lit", None, None, value)
+
+            if is_power(value, BASE):
+                if BASE == 2:
+                    n = value.bit_length() - 1
+                else:
+                    n = int(round(math.log(value, BASE)))
+                if n not in disallowed:
+                    return COST["powbase"], ("powbase", n, None, None)
+
+        if depth > depth_limit:
+            return simple_synthesis(value)
+
+        best = [simple_synthesis(value)]
+
+        def consider(cost, expr):
+            # Keep a tiny Pareto front (size <= 10)
+            for c, _ in best:
+                if c <= cost - 1e-9:
+                    return
+            best.append((cost, expr))
+            best.sort(key=lambda x: x[0])
+            if len(best) > 10:
+                best.pop()
+
+        # BASE^n +/- k, but only when k is small.
+        for anchor in base_powers:
+            if anchor == value:
+                continue
+            if BASE == 2:
+                n = anchor.bit_length() - 1
+            else:
+                n = int(round(math.log(anchor, BASE)))
+            if n in disallowed:
+                continue
+            if anchor > value:
+                k = anchor - value
+                if k <= max_ext and k not in disallowed:
+                    cost_k, expr_k = solve(k, depth + 1)
+                    total = COST["powbase"] + cost_k + COST["sub"]
+                    consider(total, ("sub", ("powbase", n, None, None), expr_k, None))
+            else:
+                k = value - anchor
+                if k <= max_ext and k not in disallowed:
+                    cost_k, expr_k = solve(k, depth + 1)
+                    total = COST["powbase"] + cost_k + COST["add"]
+                    consider(total, ("add", ("powbase", n, None, None), expr_k, None))
+
+        # Exact powers near the target only.
+        for p, base, exp in near_exact_powers(value):
+            if p == value:
+                continue
+            if base in disallowed or exp in disallowed:
+                continue
+
+            k = abs(p - value)
+            if k <= max_ext and k not in disallowed:
+                cost_base, expr_base = solve(base, depth + 1)
+                cost_exp, expr_exp = solve(exp, depth + 1)
+                cost_k, expr_k = solve(k, depth + 1)
+
+                total = cost_base + cost_exp + cost_k + COST["exp"]
+                total += COST["sub"] if p > value else COST["add"]
+
+                op = "sub" if p > value else "add"
+                consider(total, (op, ("pow", expr_base, expr_exp, None), expr_k, None))
+
+        # Exact powers.
+        for base, exp in _EXACT_POWER_MAP.get(value, ()):
+            if base in disallowed or exp in disallowed:
+                continue
+
+            cost_base, expr_base = solve(base, depth + 1)
+            cost_exp, expr_exp = solve(exp, depth + 1)
+            total = cost_base + cost_exp + COST["exp"]
+
+            consider(total, ("pow", expr_base, expr_exp, None))
+
+        # Exact factor pairs.
+        for a, b in divisor_pairs(value):
+            if a in disallowed or b in disallowed:
+                continue
+
+            cost_a, expr_a = solve(a, depth + 1)
+            cost_b, expr_b = solve(b, depth + 1)
+            total = cost_a + cost_b + COST["mul"]
+
+            consider(total, ("mul", expr_a, expr_b, None))
+
+        # Reduced additive search.
+        for a in candidate_add_splits(value):
+            b = value - a
+            if a in disallowed or b in disallowed:
+                continue
+
+            cost_a, expr_a = solve(a, depth + 1)
+            cost_b, expr_b = solve(b, depth + 1)
+            total = cost_a + cost_b + COST["add"]
+
+            consider(total, ("add", expr_a, expr_b, None))
+
+            # Only try factor-sharing on promising additive splits.
+            if a > 1 and b > 1:
+                up = min(20, math.isqrt(min(a, b)))
+                for f, _ in divisor_pairs(math.gcd(a, b)):
+                    a2 = a // f
+                    b2 = b // f
+                    cost_f, expr_f = solve(f, depth + 1)
+                    cost_a2, expr_a2 = solve(a2, depth + 1)
+                    cost_b2, expr_b2 = solve(b2, depth + 1)
+                    total2 = cost_f + cost_a2 + cost_b2 + COST["mul"] + COST["add"]
+                    consider(
+                        total2,
+                        (
+                            "mul",
+                            expr_f,
+                            ("add", expr_a2, expr_b2, None),
+                            None,
+                        ),
+                    )
+        return best[0]
+
+    cost, _ast = solve(target)
+
+    if verbose:
+        print(f"nodes: {nodes}")
+    expr = simplify_expr(render(_ast))
+    return cost, expr
+
+
+def optimize_sum_with_U(target: list[int], U: int) -> str:
+    total_target = sum(target)
+    return synthesize_optimal_with_exp(
+        total_target,
+        disallowed=set(),
+        max_ext=U,
+        max_val=(1 << 31) - 1,
+        verbose=False,
+    )[1]
+
+
+optimizations = [optimize_sum_with_U]
 
 
 def render(n: Node) -> str:
@@ -105,7 +449,7 @@ else:
 _EXACT_POWER_MAP: dict[int, list[tuple[int, int]]] = {}
 _EXACT_POWER_LIST: list[tuple[int, int, int]] = []  # (value, base, exp)
 
-for b in range(2, math.isqrt(_MAX_PRECOMP_VAL)+1):
+for b in range(2, math.isqrt(_MAX_PRECOMP_VAL) + 1):
     p = b * b
     e = 2
     while p <= _MAX_PRECOMP_VAL:
@@ -116,6 +460,9 @@ for b in range(2, math.isqrt(_MAX_PRECOMP_VAL)+1):
 
 _EXACT_POWER_LIST.sort(key=lambda t: t[0])
 _EXACT_POWER_VALUES = [x[0] for x in _EXACT_POWER_LIST]
+
+WHEEL = [1, 7, 11, 13, 17, 19, 23, 29]
+STEP = 30
 
 
 def build_balanced(nodes):
@@ -188,368 +535,39 @@ def simplify_expr(expr_str):
     return ast.unparse(new_tree)
 
 
-@lru_cache(maxsize=None)
-def divisor_pairs(n: int) -> tuple[tuple[int, int], ...]:
-    """Exact factor pairs only. Odd scan cuts half the work immediately."""
+@lru_cache(None)
+def divisor_pairs(n: int):
     if n < 4:
-        return tuple()
+        return ()
 
     out = []
+    r = math.isqrt(n)
+
+    # handle small primes explicitly
     if n % 2 == 0:
         out.append((2, n // 2))
+    if n % 3 == 0:
+        out.append((3, n // 3))
+    if n % 5 == 0:
+        out.append((5, n // 5))
 
-    r = math.isqrt(n)
-    a = 3
-    while a <= r:
-        if n % a == 0:
-            out.append((a, n // a))
-        a += 2
+    k = 0
+    while True:
+        base = STEP * k
+        if base > r:
+            break
+
+        for w in WHEEL:
+            a = base + w
+            if a > r:
+                continue
+            if n % a == 0:
+                out.append((a, n // a))
+
+        k += 1
 
     return tuple(out)
 
-
-def synthesize_optimal_with_exp(
-    target: int,
-    disallowed: Optional[set[int]] = None,
-    max_ext: int = 26,
-    max_val: int = (1 << 31) - 1,
-    verbose: bool = False,
-) -> tuple[float, str]:
-
-    disallowed = set() if disallowed is None else set(disallowed)
-    nodes = 0
-
-    # Keep base powers local to the current max_val.
-    if BASE == 2:
-        max_base_exp = max_val.bit_length() - 1
-        base_powers = [1 << e for e in range(1, max_base_exp + 1)]
-    else:
-        max_base_exp = int(math.log(max_val, BASE))
-        base_powers = [
-            BASE**e for e in range(1, max_base_exp + 1) if BASE**e <= max_val
-        ]
-    @lru_cache(maxsize=None)
-    def build_power_linear(p):
-        # 2^p = 2 * 2^(p-1)
-        if p == 0:
-            return COST["lit"], ("lit", None, None, 1)
-
-        if p not in disallowed:
-            return COST["powbase"], ("powbase", p, None, None)
-
-        cost_sub, expr_sub = build_power_linear(p - 1)
-        cost = cost_sub + COST["mul"] + COST["powbase"]  # multiply by 2^1
-        expr = ("mul", ("powbase", 1, None, None), expr_sub, None)
-        return cost, expr
-    @lru_cache(maxsize=None)
-    def simple_synthesis(value: int) -> tuple[float, Node]:
-        if value <= max_ext and value not in disallowed:
-            return COST["lit"], ("lit", None, None, value)
-
-        if value > 0:
-            if BASE == 2:
-                if value & (value - 1) == 0:
-                    n = value.bit_length() - 1
-                    if n not in disallowed:
-                        return COST["powbase"], ("powbase", n, None, None)
-                else:
-                    n = int(round(math.log(value, BASE)))
-                    if BASE**n == value and n not in disallowed:
-                        return COST["powbase"], ("powbase", n, None, None)
-
-        digits = []
-        temp = value
-        power = 0
-        while temp > 0:
-            digit = temp % BASE
-            if digit != 0:
-                digits.append((digit, power))
-            temp //= BASE
-            power += 1
-
-        if not digits:
-            return COST["lit"], ("lit", None, None, 0)
-
-        # digits.sort(key=lambda x: x[1])
-        parts = []
-        total_cost = 0.0
-        i = 0
-
-        while i < len(digits):
-            digit, start = digits[i]
-
-            if digit == 1:
-                j = i
-                while (
-                    j + 1 < len(digits)
-                    and digits[j + 1][0] == 1
-                    and digits[j + 1][1] == digits[j][1] + 1
-                ):
-                    j += 1
-
-                end = digits[j][1]
-                length = end - start + 1
-
-                if length >= 3:
-                    streak_parts = []
-                    streak_cost = 0.0
-                    valid = True
-
-                    for p in range(start, end + 1):
-                        if p in disallowed:
-                            valid = False
-                            break
-                        streak_parts.append(("powbase", p, None, None))
-                        streak_cost += COST["powbase"]
-
-                    if valid:
-                        parts.append(build_balanced(streak_parts))
-                        total_cost += streak_cost + (len(streak_parts) - 1) * COST["add"]
-                    else:
-                        # fallback: handle each term individually
-                        for p in range(start, end + 1):
-                            if p in disallowed:
-                                # build BASE**p indirectly
-                                val = BASE**p
-                                cost_p, expr_p = build_power_linear(val)
-                                parts.append(expr_p)
-                                total_cost += cost_p
-                            else:
-                                parts.append(("powbase", p, None, None))
-                                total_cost += COST["powbase"]
-
-                else:
-                    for p in range(start, end + 1):
-                        if p in disallowed:
-                            val = BASE**p
-                            cost_p, expr_p = build_power_linear(val)
-                            parts.append(expr_p)
-                            total_cost += cost_p
-                        else:
-                            parts.append(("powbase", p, None, None))
-                            total_cost += COST["powbase"]
-                i = j + 1
-            else:
-                if start == 0:
-                    parts.append(("lit", None, None, digit))
-                    total_cost += COST["lit"]
-                else:
-                    parts.append(
-                        (
-                            "mul",
-                            ("lit", None, None, digit),
-                            ("powbase", start, None, None),
-                            None,
-                        )
-                    )
-                    total_cost += COST["powbase"] + COST["mul"] + COST["lit"]
-                i += 1
-
-        expr = build_balanced(parts)
-        if len(parts) > 1:
-            total_cost += (len(parts) - 1) * COST["add"]
-
-        return total_cost, expr
-
-    @lru_cache(maxsize=None)
-    def near_exact_powers(value: int) -> tuple[tuple[int, int, int], ...]:
-        """
-        Only exact powers within +/- max_ext can matter for:
-        (a**b) +/- k, so don't scan the entire table every time.
-        """
-        lo = max(0, value - max_ext)
-        hi = min(max_val, value + max_ext)
-        left = bisect.bisect_left(_EXACT_POWER_VALUES, lo)
-        right = bisect.bisect_right(_EXACT_POWER_VALUES, hi)
-        return tuple(_EXACT_POWER_LIST[left:right])
-
-    @lru_cache(maxsize=None)
-    def candidate_add_splits(value: int) -> tuple[int, ...]:
-        """
-        Structural pruning, not best-K selection.
-        Small, midpoint-biased, and power-aware only.
-        """
-        if value <= 1:
-            return tuple()
-
-        cand = set()
-
-        # Small seeds. Enough to catch a lot, without turning into a haystack.
-        seeds = (1, 2, 3, 4, 5, 6, 7, 8, 13, 21, max_ext)
-        for x in seeds:
-            if 0 < x < value:
-                cand.add(x)
-                cand.add(value - x)
-
-        # Powers of BASE and their complements.
-        idx = bisect.bisect_left(base_powers, value)
-        for i in (idx - 3, idx - 2, idx - 1, idx, idx + 1):
-            if 0 <= i < len(base_powers):
-                p = base_powers[i]
-                if p < value:
-                    cand.add(p)
-                    cand.add(value - p)
-        # Midpoint bias, because humans and search both love symmetry.
-        half = value // 2
-        for delta in (0, 1, 2, 3, 5, 8, 13):
-            for x in (half - delta, half + delta):
-                if 1 < x < value:
-                    cand.add(x)
-
-        return tuple(sorted(cand))
-
-    depth_limit = 3
-
-    @lru_cache(maxsize=None)
-    def solve(value: int, depth: int = 0) -> tuple[float, Node]:
-        nonlocal nodes
-        nodes += 1
-        if value not in disallowed:
-            if value <= max_ext:
-                return COST["lit"], ("lit", None, None, value)
-
-            if is_power(value, BASE):
-                if BASE == 2:
-                    n = value.bit_length() - 1
-                else:
-                    n = int(round(math.log(value, BASE)))
-                if n not in disallowed:
-                    return COST["powbase"], ("powbase", n, None, None)
-
-        if depth > depth_limit:
-            return simple_synthesis(value)
-
-        best_cost, best_expr = simple_synthesis(value)
-
-        # BASE^n +/- k, but only when k is small.
-        for anchor in base_powers:
-            if anchor == value:
-                continue
-            if BASE == 2:
-                n = anchor.bit_length() - 1
-            else:
-                n = int(round(math.log(anchor, BASE)))
-            if n in disallowed:
-                continue
-            if anchor > value:
-                k = anchor - value
-                if k <= max_ext and k not in disallowed:
-                    cost_k, expr_k = solve(k, depth + 1)
-                    total = COST["powbase"] + cost_k + COST["sub"]
-                    if total < best_cost:
-                        best_cost = total
-                        best_expr = ("sub", ("powbase", n, None, None), expr_k, None)
-            else:
-                k = value - anchor
-                if k <= max_ext and k not in disallowed:
-                    cost_k, expr_k = solve(k, depth + 1)
-                    total = COST["powbase"] + cost_k + COST["add"]
-                    if total < best_cost:
-                        best_cost = total
-                        best_expr = ("add", ("powbase", n, None, None), expr_k, None)
-
-        # Exact powers near the target only.
-        for p, base, exp in near_exact_powers(value):
-            if p == value:
-                continue
-            if base in disallowed or exp in disallowed:
-                continue
-
-            k = abs(p - value)
-            if k <= max_ext and k not in disallowed:
-                cost_base, expr_base = solve(base, depth + 1)
-                cost_exp, expr_exp = solve(exp, depth + 1)
-                cost_k, expr_k = solve(k, depth + 1)
-
-                total = cost_base + cost_exp + cost_k + COST["exp"]
-                total += COST["sub"] if p > value else COST["add"]
-
-                if total < best_cost:
-                    op = "sub" if p > value else "add"
-                    best_cost = total
-                    best_expr = (op, ("pow", expr_base, expr_exp, None), expr_k, None)
-
-        # Exact powers.
-        for base, exp in _EXACT_POWER_MAP.get(value, ()):
-            if base in disallowed or exp in disallowed:
-                continue
-
-            cost_base, expr_base = solve(base, depth + 1)
-            cost_exp, expr_exp = solve(exp, depth + 1)
-            total = cost_base + cost_exp + COST["exp"]
-
-            if total < best_cost:
-                best_cost = total
-                best_expr = ("pow", expr_base, expr_exp, None)
-
-        # Exact factor pairs.
-        for a, b in divisor_pairs(value):
-            if a in disallowed or b in disallowed:
-                continue
-
-            cost_a, expr_a = solve(a, depth + 1)
-            cost_b, expr_b = solve(b, depth + 1)
-            total = cost_a + cost_b + COST["mul"]
-
-            if total < best_cost:
-                best_cost = total
-                best_expr = ("mul", expr_a, expr_b, None)
-
-        # Reduced additive search.
-        for a in candidate_add_splits(value):
-            b = value - a
-            if a in disallowed or b in disallowed:
-                continue
-
-            cost_a, expr_a = solve(a, depth + 1)
-            cost_b, expr_b = solve(b, depth + 1)
-            total = cost_a + cost_b + COST["add"]
-
-            if total < best_cost:
-                best_cost = total
-                best_expr = ("add", expr_a, expr_b, None)
-
-            # Only try factor-sharing on promising additive splits.
-            if a > 1 and b > 1:
-                up = min(20, math.isqrt(min(a, b)))
-                for f in range(2, up + 1):
-                    if a % f == 0 and b % f == 0:
-                        a2 = a // f
-                        b2 = b // f
-                        cost_f, expr_f = solve(f, depth + 1)
-                        cost_a2, expr_a2 = solve(a2, depth + 1)
-                        cost_b2, expr_b2 = solve(b2, depth + 1)
-                        total2 = cost_f + cost_a2 + cost_b2 + COST["mul"] + COST["add"]
-                        if total2 < best_cost:
-                            best_cost = total2
-                            best_expr = (
-                                "mul",
-                                expr_f,
-                                ("add", expr_a2, expr_b2, None),
-                                None,
-                            )
-        return best_cost, best_expr
-
-    cost, _ast = solve(target)
-
-    if verbose:
-        print(f"nodes: {nodes}")
-    expr = simplify_expr(render(_ast))
-    return cost, expr
-
-
-def optimize_sum_with_U(target: list[int], U: int) -> str:
-    total_target = sum(target)
-    return synthesize_optimal_with_exp(
-        total_target,
-        disallowed=set(),
-        max_ext=U,
-        max_val=(1 << 31) - 1,
-        verbose=False,
-    )[1]
-
-
-optimizations = [optimize_sum_with_U]
 
 if __name__ == "__main__":
     import time
@@ -558,6 +576,7 @@ if __name__ == "__main__":
         (56, set(), 26),
         (100, set(), 26),
         (22899, {10}, 26),
+        (989, set(), 26),
         (1000, set(), 26),
         (123, set(), 26),
         (319216, set(), 26),
@@ -609,22 +628,25 @@ if __name__ == "__main__":
         if actual_value == target:
             print(f"  ✓ Verified (actual cost: {actual_cost:.2f})")
 
+            # Display alternatives
+            def alt(equation: str):
+                # TODO: assert the equation doesn't invoke os
+                assert eval(equation) == target
+                print(
+                    f"  Alternative: {equation} = cost {evaluate_cost(equation)[1]:.3f}"
+                )
+
             # Show alternative possibilities for comparison
-            if target == 319216:
-                print(
-                    f"  Alternative: ((2**4) * (((2**6)+(2**3))-1) * ((2**8)+(5**2))) = cost {evaluate_cost('((2**4) * (((2**6)+(2**3))-1) * ((2**8)+(5**2)))')[1]:.3f}"
-                )
-            elif target == 6896:
-                print(
-                    f"  Alternative: (2**4 * (2**9 - 3**4)) = cost {evaluate_cost('2**4 * (2**9 - 3**4)')[1]:.3f}"
-                )
-            elif target == 3955:
-                print(
-                    f"  Alternative: 19 * 26 * 8 + 3 = cost {evaluate_cost('19 * 26 * 8 + 3')[1]:.3f}"
-                )
-            elif target == 1368794382:
-                print(
-                    f"  Alternative: 268435456 + (1024 + 15) * (25 * 1024 + 18) + 1073741824 = cost {evaluate_cost('268435456 + (1024 + 15) * (25 * 1024 + 18) + 1073741824')[1]:.3f}"
-                )
+            match target:
+                case 319216:
+                    alt("65536 + 15 * (16 + 512 + 16384)")
+                case 6896:
+                    alt("(64 + 19) ** 2 + 7")
+                case 3955:
+                    alt("5 * (256 + 512 + 23)")
+                case 1368794382:
+                    alt("268435456 + (1024 + 15) * (25 * 1024 + 18) + 1073741824")
+                case 989:
+                    alt("2 ** 10 - (2**5 + 3)")
         else:
             print(f"  ✗ Wrong value: {actual_value} != {target}")
