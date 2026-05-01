@@ -299,7 +299,7 @@ def synthesize_optimal_with_exp(
                             "mul",
                             ("lit", None, None, digit),
                             ("powbase", start, None, None),
-                            None
+                            None,
                         )
                     )
                     total_cost += COST["powbase"] + COST["mul"] + COST["lit"]
@@ -539,7 +539,7 @@ if __name__ == "__main__":
         (216, set(), 26),  # 6**3
         (6896, set(), 26),
         (3955, set(), 26),
-        (166375, set(), 55)
+        (166375, set(), 55),
     ]
 
     print("Testing synthesis with exponentiation patterns...")
