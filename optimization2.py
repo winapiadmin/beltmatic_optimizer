@@ -3,6 +3,7 @@ import ast
 import bisect
 from typing import Optional
 from functools import lru_cache
+
 BASE = 2
 COST = {
     "add": 1 / 2,
@@ -17,7 +18,9 @@ COST = {
 # =========================================================
 # AST NODE
 # =========================================================
-Node=tuple[str,object,object,Optional[float]]
+Node = tuple[str, object, object, Optional[float]]
+
+
 def render(n: Node) -> str:
     if n[0] == "lit":
         return str(n[3])
@@ -39,8 +42,10 @@ def render(n: Node) -> str:
 
     raise ValueError(n[0])
 
+
 def evaluate_cost(expr: str) -> tuple[int, float]:
     """Deterministic evaluator used for final verification/debug."""
+
     def _eval(node):
         if isinstance(node, ast.BinOp):
             lv, lc = _eval(node.left)
@@ -59,8 +64,8 @@ def evaluate_cost(expr: str) -> tuple[int, float]:
                     and node.left.value == BASE
                     and isinstance(node.right, ast.Constant)
                 ):
-                    return BASE ** node.right.value, COST["powbase"]
-                return lv ** rv, lc + rc + COST["exp"]
+                    return BASE**node.right.value, COST["powbase"]
+                return lv**rv, lc + rc + COST["exp"]
             raise ValueError("Unsupported op")
 
         if isinstance(node, ast.Constant):
@@ -70,6 +75,7 @@ def evaluate_cost(expr: str) -> tuple[int, float]:
 
     t = ast.parse(expr, mode="eval")
     return _eval(t.body)
+
 
 @lru_cache(maxsize=None)
 def is_power(n, base):
@@ -93,15 +99,13 @@ if BASE == 2:
 else:
     _MAX_BASE_EXP = int(math.log(_MAX_PRECOMP_VAL, BASE))
     _BASE_POWERS_ALL = [
-        BASE ** e
-        for e in range(1, _MAX_BASE_EXP + 1)
-        if BASE ** e <= _MAX_PRECOMP_VAL
+        BASE**e for e in range(1, _MAX_BASE_EXP + 1) if BASE**e <= _MAX_PRECOMP_VAL
     ]
 
 _EXACT_POWER_MAP: dict[int, list[tuple[int, int]]] = {}
 _EXACT_POWER_LIST: list[tuple[int, int, int]] = []  # (value, base, exp)
 
-for b in range(2, 32):
+for b in range(2, math.isqrt(_MAX_PRECOMP_VAL)):
     p = b * b
     e = 2
     while p <= _MAX_PRECOMP_VAL:
@@ -112,6 +116,8 @@ for b in range(2, 32):
 
 _EXACT_POWER_LIST.sort(key=lambda t: t[0])
 _EXACT_POWER_VALUES = [x[0] for x in _EXACT_POWER_LIST]
+
+
 def build_balanced(nodes):
     level = list(nodes)
     while len(level) > 1:
@@ -131,9 +137,15 @@ def build_balanced(nodes):
 def fold_pow(node):
     # Only fold a ** b when both are constants
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Pow):
-        if node.left.value == BASE:
-            return ast.Constant(value=node.left.value ** node.right.value)
+        if (
+            isinstance(node.left, ast.Constant)
+            and node.left.value == BASE
+            and isinstance(node.right, ast.Constant)
+            and isinstance(node.right.value, int)
+        ):
+            return ast.Constant(value=node.left.value**node.right.value)
     return node
+
 
 def flatten_add(node):
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
@@ -141,23 +153,30 @@ def flatten_add(node):
     else:
         return [node]
 
+
 def transform(node):
     # Recursively process children first
     for field, value in ast.iter_fields(node):
         if isinstance(value, ast.AST):
             setattr(node, field, transform(value))
         elif isinstance(value, list):
-            setattr(node, field, [transform(v) if isinstance(v, ast.AST) else v for v in value])
+            setattr(
+                node,
+                field,
+                [transform(v) if isinstance(v, ast.AST) else v for v in value],
+            )
 
     # Then apply local rewrite
     node = fold_pow(node)
     return node
+
 
 def rebuild_add(terms):
     expr = terms[0]
     for term in terms[1:]:
         expr = ast.BinOp(left=expr, op=ast.Add(), right=term)
     return expr
+
 
 def simplify_expr(expr_str):
     tree = ast.parse(expr_str, mode="eval")
@@ -167,12 +186,14 @@ def simplify_expr(expr_str):
     new_tree = rebuild_add(terms)
 
     return ast.unparse(new_tree)
+
+
 def synthesize_optimal_with_exp(
     target: int,
     disallowed: Optional[set[int]] = None,
     max_ext: int = 26,
     max_val: int = (1 << 31) - 1,
-    verbose: bool = False
+    verbose: bool = False,
 ) -> tuple[float, str]:
 
     disallowed = set() if disallowed is None else set(disallowed)
@@ -185,9 +206,7 @@ def synthesize_optimal_with_exp(
     else:
         max_base_exp = int(math.log(max_val, BASE))
         base_powers = [
-            BASE ** e
-            for e in range(1, max_base_exp + 1)
-            if BASE ** e <= max_val
+            BASE**e for e in range(1, max_base_exp + 1) if BASE**e <= max_val
         ]
 
     @lru_cache(maxsize=None)
@@ -222,7 +241,7 @@ def synthesize_optimal_with_exp(
                         return COST["powbase"], ("powbase", n, None, None)
                 else:
                     n = int(round(math.log(value, BASE)))
-                    if BASE ** n == value and n not in disallowed:
+                    if BASE**n == value and n not in disallowed:
                         return COST["powbase"], ("powbase", n, None, None)
 
         digits = []
@@ -238,7 +257,7 @@ def synthesize_optimal_with_exp(
         if not digits:
             return COST["lit"], ("lit", None, None, 0)
 
-        #digits.sort(key=lambda x: x[1])
+        # digits.sort(key=lambda x: x[1])
         parts = []
         total_cost = 0.0
         i = 0
@@ -259,21 +278,29 @@ def synthesize_optimal_with_exp(
                 length = end - start + 1
 
                 if length >= 3:
-                    streak_parts = [("powbase", p,None,None) for p in range(start, end + 1)]
+                    streak_parts = [
+                        ("powbase", p, None, None) for p in range(start, end + 1)
+                    ]
                     parts.append(build_balanced(streak_parts))
                     total_cost += length * COST["powbase"] + (length - 1) * COST["add"]
                 else:
                     for p in range(start, end + 1):
-                        parts.append(("powbase", p,None,None))
+                        parts.append(("powbase", p, None, None))
                         total_cost += COST["powbase"]
 
                 i = j + 1
             else:
                 if start == 0:
-                    parts.append(("lit", None,None,digit))
+                    parts.append(("lit", None, None, digit))
                     total_cost += COST["lit"]
                 else:
-                    parts.append(("mul", ("lit", None,None,digit),("powbase", start,None,None)))
+                    parts.append(
+                        (
+                            "mul",
+                            ("lit", None, None, digit),
+                            ("powbase", start, None, None),
+                        )
+                    )
                     total_cost += COST["powbase"] + COST["mul"] + COST["lit"]
                 i += 1
 
@@ -314,11 +341,13 @@ def synthesize_optimal_with_exp(
                 cand.add(value - x)
 
         # Powers of BASE and their complements.
-        for p in base_powers:
-            if p < value:
-                cand.add(p)
-                cand.add(value - p)
-
+        idx = bisect.bisect_left(base_powers, value)
+        for i in (idx - 3, idx - 2, idx - 1, idx, idx + 1):
+            if 0 <= i < len(base_powers):
+                p = base_powers[i]
+                if p < value:
+                    cand.add(p)
+                    cand.add(value - p)
         # Midpoint bias, because humans and search both love symmetry.
         half = value // 2
         for delta in (0, 1, 2, 3, 5, 8, 13):
@@ -336,7 +365,7 @@ def synthesize_optimal_with_exp(
         nodes += 1
         if value not in disallowed:
             if value <= max_ext:
-                return COST["lit"], ("lit", None,None,value)
+                return COST["lit"], ("lit", None, None, value)
 
             if is_power(value, BASE):
                 if BASE == 2:
@@ -455,14 +484,19 @@ def synthesize_optimal_with_exp(
                         total2 = cost_f + cost_a2 + cost_b2 + COST["mul"] + COST["add"]
                         if total2 < best_cost:
                             best_cost = total2
-                            best_expr = ("mul", expr_f, ("add", expr_a2, expr_b2, None), None)
+                            best_expr = (
+                                "mul",
+                                expr_f,
+                                ("add", expr_a2, expr_b2, None),
+                                None,
+                            )
         return best_cost, best_expr
 
     cost, _ast = solve(target)
 
     if verbose:
         print(f"nodes: {nodes}")
-    expr=simplify_expr(render(_ast))
+    expr = simplify_expr(render(_ast))
     return cost, expr
 
 
@@ -484,27 +518,28 @@ if __name__ == "__main__":
     import time
 
     test_cases = [
-        (56,set(),26),
+        (56, set(), 26),
         (100, set(), 26),
         (22899, {10}, 26),
         (1000, set(), 26),
         (123, set(), 26),
         (319216, set(), 26),
-        (2**28+2**29,set(),27),
+        (2**28 + 2**29, set(), 27),
         (1073741824, set(), 26),  # 2^30
         (1073741825, set(), 26),  # 2^30 + 1
         (2147483647, set(), 26),  # 2^31 - 1
-        (1048575, set(), 26),     # 2^20 - 1
-        (654321, set(), 26),      # Has contiguous sequences
-        (999999, set(), 26),      # Another test
+        (1048575, set(), 26),  # 2^20 - 1
+        (654321, set(), 26),  # Has contiguous sequences
+        (999999, set(), 26),  # Another test
         (4953, {10}, 26),
         (4983, {10}, 26),
-        (36, set(), 26),          # 6**2
-        (64, set(), 26),          # 4**3 or 8**2
-        (125, set(), 26),         # 5**3
-        (216, set(), 26),         # 6**3
-        (6896,set(),26),
-        (3955,set(),26)
+        (36, set(), 26),  # 6**2
+        (64, set(), 26),  # 4**3 or 8**2
+        (125, set(), 26),  # 5**3
+        (216, set(), 26),  # 6**3
+        (6896, set(), 26),
+        (3955, set(), 26),
+        (166375, set(), 55)
     ]
 
     print("Testing synthesis with exponentiation patterns...")
@@ -538,10 +573,16 @@ if __name__ == "__main__":
 
             # Show alternative possibilities for comparison
             if target == 319216:
-                print(f"  Alternative: ((2**4) * (((2**6)+(2**3))-1) * ((2**8)+(5**2))) = cost {evaluate_cost('((2**4) * (((2**6)+(2**3))-1) * ((2**8)+(5**2)))')[1]:.3f}")
+                print(
+                    f"  Alternative: ((2**4) * (((2**6)+(2**3))-1) * ((2**8)+(5**2))) = cost {evaluate_cost('((2**4) * (((2**6)+(2**3))-1) * ((2**8)+(5**2)))')[1]:.3f}"
+                )
             elif target == 6896:
-                print(f"  Alternative: (2**4 * (2**9 - 3**4)) = cost {evaluate_cost('2**4 * (2**9 - 3**4)')[1]:.3f}")
+                print(
+                    f"  Alternative: (2**4 * (2**9 - 3**4)) = cost {evaluate_cost('2**4 * (2**9 - 3**4)')[1]:.3f}"
+                )
             elif target == 3955:
-                print(f"  Alternative: 19 * 26 * 8 + 3 = cost {evaluate_cost('19 * 26 * 8 + 3')[1]:.3f}")
+                print(
+                    f"  Alternative: 19 * 26 * 8 + 3 = cost {evaluate_cost('19 * 26 * 8 + 3')[1]:.3f}"
+                )
         else:
             print(f"  ✗ Wrong value: {actual_value} != {target}")

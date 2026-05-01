@@ -1,7 +1,9 @@
 import tkinter as tk
 from optimization2 import *
+
 BITS_COUNT = 32
 U = 27  # adjustable merge threshold
+
 
 # -------------------------------------------------------
 # Bit breakdown
@@ -11,6 +13,7 @@ def int_to_bit_details(n):
     bit_list = [int(b) for b in bits]
     details = [(int(b), 2**i, i) for i, b in enumerate(bits)]
     return details, bit_list
+
 
 # -------------------------------------------------------
 # GUI callback
@@ -37,11 +40,15 @@ def update_bits(event=None):
         if set_powers:
             for optimization in optimizations:
                 terms = optimization(set_powers, U)
-                bits_text.insert(tk.END, f"\nMinimal-term representation ({optimization.__name__}):\n")
+                bits_text.insert(
+                    tk.END,
+                    f"\nMinimal-term representation ({optimization.__name__}):\n",
+                )
                 bits_text.insert(tk.END, terms + "\n")
 
     except ValueError:
         bits_text.insert(tk.END, "Enter a valid integer.")
+
 
 # -------------------------------------------------------
 # GUI
@@ -66,6 +73,6 @@ bits_text.grid(row=2, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
 
 scrollbar = tk.Scrollbar(root, command=bits_text.yview)
 bits_text.config(yscrollcommand=scrollbar.set)
-scrollbar.grid(row=2, column=2, sticky='ns')
+scrollbar.grid(row=2, column=2, sticky="ns")
 
 root.mainloop()
