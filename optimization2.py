@@ -135,7 +135,7 @@ def synthesize_optimal_with_exp(
                     for p in range(start, end + 1):
                         if p in disallowed:
                             val = BASE**p
-                            cost_p, expr_p = build_power_linear(val)
+                            cost_p, expr_p = build_power_linear(p)
                             parts.append(expr_p)
                             total_cost += cost_p
                         else:
