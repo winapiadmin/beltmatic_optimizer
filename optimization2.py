@@ -299,6 +299,7 @@ def synthesize_optimal_with_exp(
                             "mul",
                             ("lit", None, None, digit),
                             ("powbase", start, None, None),
+                            None
                         )
                     )
                     total_cost += COST["powbase"] + COST["mul"] + COST["lit"]
@@ -502,14 +503,13 @@ def synthesize_optimal_with_exp(
 
 def optimize_sum_with_U(target: list[int], U: int) -> str:
     total_target = sum(target)
-    cost, expr = synthesize_optimal_with_exp(
+    return synthesize_optimal_with_exp(
         total_target,
         disallowed=set(),
         max_ext=U,
         max_val=(1 << 31) - 1,
         verbose=False,
-    )
-    return expr
+    )[1]
 
 
 optimizations = [optimize_sum_with_U]
