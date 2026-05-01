@@ -64,11 +64,11 @@ def synthesize_optimal_with_exp(
     # Cache for memoization (limited to prevent memory explosion)
     cache = {}
     @lru_cache(maxsize=1000)
-    def solve(value: int, depth: int = 0, max_depth: int = 2) -> Tuple[float, str]:
+    def solve(value: int, depth: int = 0, max_depth: int = 3) -> Tuple[float, str]:
         """Recursive solver with depth limit."""
         # Return cached result if available
-        if (value,depth) in cache:
-            return cache[(value,depth)]
+        if value in cache:
+            return cache[value]
         
         if depth >= max_depth:
             # Base case: use simple synthesis
@@ -228,7 +228,7 @@ def synthesize_optimal_with_exp(
                             best_cost = total_cost
                             best_expr = f"(({expr_base}**{expr_exp})+{expr_k})"
         # Cache and return result
-        cache[(value,depth)] = (best_cost, best_expr)
+        cache[value] = (best_cost, best_expr)
         return best_cost, best_expr
     @lru_cache(maxsize=10000)
     def simple_synthesis(value: int) -> Tuple[float, str]:
@@ -381,19 +381,7 @@ def synthesize_optimal_with_exp(
 
         return total_cost, expr
     
-    # Start with recursive solving
-    cost, expr = solve(target)
-    
-    # Verify
-    #actual_value, actual_cost = evaluate_cost(expr)
-    #if actual_value != target:
-    #    # Fallback to simple synthesis
-    #    cost, expr = simple_synthesis(target)
-    #    actual_value, actual_cost = evaluate_cost(expr)
-    
-    # Make sure cost is accurate
-    #if abs(cost - actual_cost) > 0.001:
-    #    cost = actual_cost
+    cost, expr = solve(target,0,10)
     
     return cost, expr
 def optimize_sum_with_U(target: list[int], U: int) -> str:
@@ -434,6 +422,7 @@ if __name__ == "__main__":
         (125, set(), 26),         # 5**3
         (216, set(), 26),         # 6**3
         (6896,set(),26),
+        (3955,set(),26)
     ]
     
     print("Testing synthesis with exponentiation patterns...")
@@ -469,6 +458,8 @@ if __name__ == "__main__":
             if target == 319216:
                 print(f"  Alternative: ((2**4) * (((2**6)+(2**3))-1) * ((2**8)+(5**2))) = cost {evaluate_cost('((2**4) * (((2**6)+(2**3))-1) * ((2**8)+(5**2)))')[1]:.3f}")
             elif target == 6896:
-                print(f"  Alternative: (2**4 * (2**9 - 3**4)) = cost {evaluate_cost('2**4 * (2**9 - 3**4)')[1]:.3f}")                
+                print(f"  Alternative: (2**4 * (2**9 - 3**4)) = cost {evaluate_cost('2**4 * (2**9 - 3**4)')[1]:.3f}")
+            elif target == 3955:
+                print(f"  Alternative: 19 * 26 * 8 + 3 = cost {evaluate_cost('19 * 26 * 8 + 3')[1]:.3f}")
         else:
             print(f"  ✗ Wrong value: {actual_value} != {target}")
