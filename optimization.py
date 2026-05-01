@@ -77,4 +77,4 @@ if __name__=='__main__':
             temp >>= 1
             p += 1
         return optimizations[0](powers,U)
-    print(optimize_sum_with_U(999999, 26))
+    print(optimize(999999, 26))
