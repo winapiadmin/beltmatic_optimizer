@@ -18,7 +18,7 @@ COST = {
 # powbase: BASE**value
 # add, sub, mul, exp: a (operation) b
 # lit: value
-Node = tuple[str, object, object, Optional[float]]
+Node = tuple[str, object, object, Optional[int]]
 
 
 def synthesize_optimal_with_exp(
@@ -134,7 +134,6 @@ def synthesize_optimal_with_exp(
                 else:
                     for p in range(start, end + 1):
                         if p in disallowed:
-                            val = BASE**p
                             cost_p, expr_p = build_power_linear(p)
                             parts.append(expr_p)
                             total_cost += cost_p
@@ -237,15 +236,40 @@ def synthesize_optimal_with_exp(
         best = [simple_synthesis(value)]
 
         def consider(cost, expr):
-            # Keep a tiny Pareto front (size <= 10)
+            # Keep a tiny Pareto front (size <= 50)
             for c, _ in best:
                 if c <= cost - 1e-9:
                     return
             best.append((cost, expr))
             best.sort(key=lambda x: x[0])
-            if len(best) > 10:
+            if len(best) > 3:
                 best.pop()
+        # k*BASE^n +/- r
+        for anchor in base_powers:
+            if anchor == value:
+                continue
+            if BASE == 2:
+                n = anchor.bit_length() - 1
+            else:
+                n = int(round(math.log(anchor, BASE)))
+            if n in disallowed:
+                continue
+            for k in range(2, 32):
+                if k in disallowed or anchor * k > max_val: continue
 
+                cost_k, expr_k = solve(k, depth+1)
+                if anchor*k > value:
+                    r = anchor*k - value
+                    if r <= max_ext*2 and r not in disallowed:
+                        cost_r, expr_r = solve(r, depth + 1)
+                        total = COST["powbase"] + cost_r + COST["sub"] + COST["mul"] + cost_k
+                        consider(total, ("sub", ("mul", expr_k, ("powbase", n, None, None), None), expr_r, None))
+                else:
+                    r = value - anchor*k
+                    if r <= max_ext*2 and r not in disallowed:
+                        cost_r, expr_r = solve(r, depth + 1)
+                        total = COST["powbase"] + cost_r + COST["add"] + COST["mul"] + cost_k
+                        consider(total, ("add", ("mul", expr_k, ("powbase", n, None, None), None), expr_r, None))
         # BASE^n +/- k, but only when k is small.
         for anchor in base_powers:
             if anchor == value:
@@ -258,13 +282,13 @@ def synthesize_optimal_with_exp(
                 continue
             if anchor > value:
                 k = anchor - value
-                if k <= max_ext and k not in disallowed:
+                if k <= max_ext*2 and k not in disallowed:
                     cost_k, expr_k = solve(k, depth + 1)
                     total = COST["powbase"] + cost_k + COST["sub"]
                     consider(total, ("sub", ("powbase", n, None, None), expr_k, None))
             else:
                 k = value - anchor
-                if k <= max_ext and k not in disallowed:
+                if k <= max_ext*2 and k not in disallowed:
                     cost_k, expr_k = solve(k, depth + 1)
                     total = COST["powbase"] + cost_k + COST["add"]
                     consider(total, ("add", ("powbase", n, None, None), expr_k, None))
@@ -277,7 +301,7 @@ def synthesize_optimal_with_exp(
                 continue
 
             k = abs(p - value)
-            if k <= max_ext and k not in disallowed:
+            if k <= max_ext*2 and k not in disallowed:
                 cost_base, expr_base = solve(base, depth + 1)
                 cost_exp, expr_exp = solve(exp, depth + 1)
                 cost_k, expr_k = solve(k, depth + 1)
@@ -537,37 +561,11 @@ def simplify_expr(expr_str):
 
 @lru_cache(None)
 def divisor_pairs(n: int):
-    if n < 4:
-        return ()
-
     out = []
-    r = math.isqrt(n)
-
-    # handle small primes explicitly
-    if n % 2 == 0:
-        out.append((2, n // 2))
-    if n % 3 == 0:
-        out.append((3, n // 3))
-    if n % 5 == 0:
-        out.append((5, n // 5))
-
-    k = 0
-    while True:
-        base = STEP * k
-        if base > r:
-            break
-
-        for w in WHEEL:
-            a = base + w
-            if a > r:
-                continue
-            if n % a == 0:
-                out.append((a, n // a))
-
-        k += 1
-
+    for a in range(1, math.isqrt(n) + 1):
+        if n % a == 0:
+            out.append((a, n // a))
     return tuple(out)
-
 
 if __name__ == "__main__":
     import time
@@ -614,7 +612,7 @@ if __name__ == "__main__":
             target,
             disallowed=disallowed,
             max_ext=max_ext,
-            max_val=(1 << 31) - 1,
+            max_val=2**31-1,
             verbose=False,
         )
         elapsed = time.time() - start
@@ -626,7 +624,10 @@ if __name__ == "__main__":
         # Verify
         actual_value, actual_cost = evaluate_cost(expr)
         if actual_value == target:
-            print(f"  ✓ Verified (actual cost: {actual_cost:.2f})")
+            if actual_cost != cost:
+                print(f"  ✗ Wrong cost (actual cost: {actual_cost:.2f}")
+            else: 
+                print(f"  ✓ Verified (actual cost: {actual_cost:.2f})")
 
             # Display alternatives
             def alt(equation: str):
