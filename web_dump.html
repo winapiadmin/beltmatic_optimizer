@@ -1,0 +1,1100 @@
+<!-- written by https://www.reddit.com/r/beltmatic/comments/1t0wbpb/comment/ok1413d/?utm_source=share&utm_medium=web3x&utm_name=web3xcss&utm_term=1&utm_content=share_button -->
+<!-- modified by winapiadmin -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BELTMATIC // SEQUENCE OPTIMIZER</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=VT323&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d1014;
+    --bg-elev: #14181f;
+    --bg-panel: #181d26;
+    --line: #2a3140;
+    --line-soft: #1f2530;
+    --text: #d8dde3;
+    --text-dim: #7a8696;
+    --text-faint: #4a5462;
+    --amber: #ffa024;
+    --amber-soft: rgba(255, 160, 36, 0.12);
+    --cyan: #5dd6ff;
+    --cyan-soft: rgba(93, 214, 255, 0.10);
+    --green: #7fda6e;
+    --red: #ff5e5e;
+    --magenta: #d97aff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 14px; line-height: 1.5; min-height: 100vh; }
+  body {
+    background-image:
+      linear-gradient(var(--line-soft) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
+    background-size: 32px 32px;
+    background-position: -1px -1px;
+  }
+  ::selection { background: var(--amber); color: var(--bg); }
+
+  /* HEADER */
+  header {
+    border-bottom: 2px solid var(--line);
+    background: var(--bg-elev);
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  header .brand { display: flex; align-items: baseline; gap: 14px; }
+  header h1 {
+    font-family: 'VT323', monospace;
+    font-size: 38px;
+    color: var(--amber);
+    letter-spacing: 1px;
+    line-height: 1;
+    text-shadow: 0 0 12px rgba(255, 160, 36, 0.35);
+  }
+  header h1 .slash { color: var(--text-faint); }
+  header .tag {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+  header .status { display: flex; gap: 16px; align-items: center; font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1.5px; }
+  header .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; margin-right: 6px; box-shadow: 0 0 8px var(--green); animation: blink 2s infinite; }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  /* LAYOUT */
+  main { display: grid; grid-template-columns: 360px 1fr; gap: 0; min-height: calc(100vh - 60px); }
+  @media (max-width: 880px) { main { grid-template-columns: 1fr; } }
+  .col-input { border-right: 2px solid var(--line); background: rgba(13, 16, 20, 0.85); padding: 24px 20px; }
+  .col-output { padding: 24px 24px 60px; }
+
+  /* PANEL */
+  .panel { background: var(--bg-panel); border: 1px solid var(--line); margin-bottom: 18px; }
+  .panel-header { padding: 8px 14px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; background: var(--bg-elev); }
+  .panel-title { font-family: 'VT323', monospace; font-size: 18px; color: var(--cyan); letter-spacing: 2px; line-height: 1; }
+  .panel-title.amber { color: var(--amber); }
+  .panel-title.magenta { color: var(--magenta); }
+  .panel-meta { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 1.5px; }
+  .panel-body { padding: 16px 14px; }
+
+  /* INPUT FIELDS */
+  .field { margin-bottom: 18px; }
+  .field label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: var(--text-dim); margin-bottom: 6px; }
+  .field label .req { color: var(--amber); }
+  .field label .hint { color: var(--text-faint); text-transform: none; letter-spacing: 0; font-size: 11px; margin-left: 6px; }
+  .field input, .field select {
+    width: 100%; padding: 10px 12px; background: var(--bg); color: var(--text); border: 1px solid var(--line);
+    font-family: 'JetBrains Mono', monospace; font-size: 14px; outline: none;
+  }
+  .field input:focus, .field select:focus { border-color: var(--amber); box-shadow: 0 0 0 1px var(--amber); }
+  .field input::placeholder { color: var(--text-faint); }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  /* BUTTONS */
+  button.run {
+    width: 100%; padding: 14px 16px; background: var(--amber); color: var(--bg); border: none;
+    font-family: 'VT323', monospace; font-size: 22px; letter-spacing: 4px; cursor: pointer;
+    transition: all 0.15s; text-transform: uppercase;
+  }
+  button.run:hover { background: #ffb648; box-shadow: 0 0 24px rgba(255, 160, 36, 0.5); }
+  button.run:active { transform: translateY(1px); }
+  button.run:disabled { background: var(--line); color: var(--text-faint); cursor: not-allowed; box-shadow: none; }
+  button.ghost {
+    background: transparent; color: var(--cyan); border: 1px solid var(--cyan); padding: 6px 12px;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; cursor: pointer; transition: all 0.15s;
+  }
+  button.ghost:hover { background: var(--cyan-soft); }
+
+  /* PRESETS */
+  .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .preset {
+    padding: 4px 8px; font-size: 11px; background: transparent; border: 1px solid var(--line);
+    color: var(--text-dim); cursor: pointer; font-family: inherit; transition: all 0.1s;
+  }
+  .preset:hover { border-color: var(--amber); color: var(--amber); }
+
+  /* BIT BREAKDOWN */
+  .bits-grid { display: grid; grid-template-columns: repeat(32, 1fr); gap: 2px; margin-bottom: 12px; }
+  @media (max-width: 700px) { .bits-grid { grid-template-columns: repeat(16, 1fr); } }
+  .bit {
+    aspect-ratio: 1;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; color: var(--text-faint);
+    transition: all 0.2s;
+  }
+  .bit.set { background: var(--amber); color: var(--bg); border-color: var(--amber); box-shadow: 0 0 8px rgba(255, 160, 36, 0.4); }
+  .bit-labels { display: grid; grid-template-columns: repeat(32, 1fr); gap: 2px; margin-bottom: 4px; }
+  @media (max-width: 700px) { .bit-labels { grid-template-columns: repeat(16, 1fr); } }
+  .bit-label { font-size: 9px; color: var(--text-faint); text-align: center; line-height: 1; }
+  .bit-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .bit-chip {
+    padding: 4px 8px; background: var(--amber-soft); border: 1px solid var(--amber);
+    color: var(--amber); font-size: 12px; line-height: 1;
+  }
+
+  /* EXPRESSION */
+  .expr-wrap { position: relative; }
+  .expr {
+    background: var(--bg); border: 1px solid var(--line); padding: 16px;
+    font-family: 'JetBrains Mono', monospace; font-size: 15px; color: var(--cyan);
+    word-break: break-all; line-height: 1.7;
+    max-height: 280px; overflow: auto;
+  }
+  .expr .num { color: var(--text); }
+  .expr .op { color: var(--text-dim); }
+  .expr .pow { color: var(--magenta); }
+  .copy-btn { position: absolute; top: 6px; right: 6px; }
+
+  /* STATS GRID */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1px; background: var(--line); }
+  .stat { background: var(--bg-panel); padding: 14px; }
+  .stat-label { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 6px; }
+  .stat-value { font-family: 'VT323', monospace; font-size: 28px; color: var(--text); line-height: 1; }
+  .stat-value.amber { color: var(--amber); }
+  .stat-value.cyan { color: var(--cyan); }
+  .stat-value.green { color: var(--green); }
+  .stat-value.red { color: var(--red); }
+
+  /* STEPS */
+  .steps { display: flex; flex-direction: column; gap: 4px; }
+  .step {
+    display: grid; grid-template-columns: 30px 1fr; gap: 12px; padding: 8px 12px; background: var(--bg);
+    border-left: 2px solid var(--line); font-size: 13px; align-items: center;
+  }
+  .step:hover { background: var(--bg-elev); border-left-color: var(--amber); }
+  .step-idx { color: var(--text-faint); font-size: 11px; }
+  .step-expr { color: var(--text); }
+  .step-eq { color: var(--text-dim); }
+  .step-val { color: var(--cyan); font-weight: 500; }
+  .step.literal { border-left-color: var(--green); }
+  .step.literal .step-val { color: var(--green); }
+  .step.power { border-left-color: var(--magenta); }
+  .step.power .step-val { color: var(--magenta); }
+
+  /* MESSAGES */
+  .empty { color: var(--text-faint); text-align: center; padding: 40px 20px; font-size: 12px; text-transform: uppercase; letter-spacing: 2px; }
+  .computing { color: var(--amber); text-align: center; padding: 40px 20px; font-size: 14px; }
+  .computing::after { content: '_'; animation: blink-cursor 1s infinite; }
+  @keyframes blink-cursor { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
+  .error { color: var(--red); padding: 14px; background: rgba(255, 94, 94, 0.08); border: 1px solid var(--red); }
+
+  /* INFO */
+  .info-block { font-size: 12px; color: var(--text-dim); line-height: 1.7; }
+  .info-block code { background: var(--bg); padding: 1px 6px; color: var(--amber); border: 1px solid var(--line-soft); }
+  .info-block strong { color: var(--text); }
+
+  /* COST TABLE */
+  .cost-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .cost-table td { padding: 5px 8px; border-bottom: 1px solid var(--line-soft); }
+  .cost-table td:first-child { color: var(--cyan); font-weight: 500; }
+  .cost-table td:last-child { color: var(--amber); text-align: right; font-variant-numeric: tabular-nums; }
+
+  footer { padding: 14px 20px; border-top: 2px solid var(--line); text-align: center; font-size: 11px; color: var(--text-faint); letter-spacing: 1.5px; text-transform: uppercase; }
+  footer a { color: var(--text-dim); text-decoration: none; border-bottom: 1px dotted var(--text-faint); }
+  footer a:hover { color: var(--amber); border-bottom-color: var(--amber); }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--line); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+</style>
+<!-- <script defer data-domain="marginalia.tiiny.site" src="https://analytics.tiiny.site/js/plausible.js"></script><script type="text/javascript" src="https://tiiny.host/ad-script.js"></script> -->
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <h1>BELTMATIC<span class="slash">//</span>OPT</h1>
+    <span class="tag">Sequence Synthesis Terminal</span>
+  </div>
+  <div class="status"><span><span class="dot"></span>READY</span><span id="enginestat">ENGINE: COST-OPT</span></div>
+</header>
+
+<main>
+
+  <!-- INPUTS -->
+  <div class="col-input">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title amber">// PARAMETERS</span>
+        <span class="panel-meta">INPUT</span>
+      </div>
+      <div class="panel-body">
+        <div class="field">
+          <label>Target value <span class="req">*</span></label>
+          <input id="target" type="text" inputmode="numeric" value="999999" autocomplete="off">
+          <div class="presets">
+            <button class="preset" data-target="56">56</button>
+            <button class="preset" data-target="989">989</button>
+            <button class="preset" data-target="22899">22899</button>
+            <button class="preset" data-target="319216">319216</button>
+            <button class="preset" data-target="999999">999999</button>
+            <button class="preset" data-target="1073741824">2³⁰</button>
+            <button class="preset" data-target="2147483647">2³¹−1</button>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label>Max ext. (U) <span class="hint">≤ this is free</span></label>
+            <input id="maxExt" type="number" value="26" min="1" max="200">
+          </div>
+          <div class="field">
+            <label>Engine</label>
+            <select id="engine">
+              <option value="cost">Cost-optimal</option>
+              <option value="bfs">BFS step-min</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Disallowed values <span class="hint">comma-separated</span></label>
+          <input id="disallowed" type="text" placeholder="e.g. 10, 17" autocomplete="off">
+        </div>
+
+        <div class="field" id="bfsOpsField" style="display:none;">
+          <label>BFS operators</label>
+          <select id="bfsOps">
+            <option value="+,-,*,/">+ − × ÷</option>
+            <option value="+,-,*">+ − ×</option>
+            <option value="+,*">+ ×</option>
+            <option value="+,*,/">+ × ÷</option>
+          </select>
+        </div>
+
+        <button class="run" id="runBtn">RUN OPTIMIZER</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">// COST MODEL</span>
+        <span class="panel-meta">REF</span>
+      </div>
+      <div class="panel-body">
+        <table class="cost-table">
+          <tr><td>literal ≤ U</td><td>0.00</td></tr>
+          <tr><td>2 ^ n  (powbase)</td><td>0.00</td></tr>
+          <tr><td>add</td><td>0.50</td></tr>
+          <tr><td>sub</td><td>1.00</td></tr>
+          <tr><td>mul</td><td>1.00</td></tr>
+          <tr><td>exp (a^b)</td><td>~0.91</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- OUTPUT -->
+  <div class="col-output">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">// BIT DECOMPOSITION</span>
+        <span class="panel-meta" id="binMeta">DEC=0 / HEX=0x0</span>
+      </div>
+      <div class="panel-body" id="binPanel">
+        <div class="empty">// awaiting input</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title amber">// SYNTHESIZED EXPRESSION</span>
+        <span class="panel-meta" id="exprMeta"></span>
+      </div>
+      <div class="panel-body">
+        <div id="exprPanel">
+          <div class="empty">// no result</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title magenta">// METRICS</span>
+        <span class="panel-meta">BENCHMARK</span>
+      </div>
+      <div class="panel-body" style="padding:1px;">
+        <div class="stats" id="statsPanel">
+          <div class="stat"><div class="stat-label">Cost</div><div class="stat-value amber">—</div></div>
+          <div class="stat"><div class="stat-label">Verified</div><div class="stat-value">—</div></div>
+          <div class="stat"><div class="stat-label">Search nodes</div><div class="stat-value cyan">—</div></div>
+          <div class="stat"><div class="stat-label">Time</div><div class="stat-value">—</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">// BUILD STEPS</span>
+        <span class="panel-meta" id="stepsMeta"></span>
+      </div>
+      <div class="panel-body" id="stepsPanel">
+        <div class="empty">// no result</div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  Port of <a href="https://github.com/winapiadmin/beltmatic_optimizer" target="_blank" rel="noopener">winapiadmin/beltmatic_optimizer</a> · static html · zero deps
+</footer>
+
+<script>
+//============================================================================
+//  ENGINE — port of optimization2.py + optimization.py
+//============================================================================
+"use strict";
+
+const BASE = 2;
+const COST = { add: 0.5, sub: 1.0, mul: 1.0, exp: 1.0 / 1.1, powbase: 0.0, lit: 0.0 };
+const MAX_VAL = 2147483647; // 2^31 - 1
+
+//-------------- helpers --------------
+function isPower(n, base) {
+  if (n < 1 || base < 2) return false;
+  if (base === 2) return (n & (n - 1)) === 0;
+  while (n % base === 0) n = n / base;
+  return n === 1;
+}
+// bit_length(n) - 1 for n a power of 2
+function log2int(n) { return 31 - Math.clz32(n); }
+
+const _divisorPairsCache = new Map();
+function divisorPairs(n) {
+  if (_divisorPairsCache.has(n)) return _divisorPairsCache.get(n);
+  const out = [];
+  const sq = Math.floor(Math.sqrt(n));
+  for (let a = 1; a <= sq; a++) if (n % a === 0) out.push([a, n / a]);
+  _divisorPairsCache.set(n, out);
+  return out;
+}
+function gcd(a, b) { a = Math.abs(a); b = Math.abs(b); while (b) { const t = a % b; a = b; b = t; } return a; }
+function bisectLeft(arr, x) { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >>> 1; if (arr[m] < x) lo = m + 1; else hi = m; } return lo; }
+function bisectRight(arr, x) { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >>> 1; if (arr[m] <= x) lo = m + 1; else hi = m; } return lo; }
+
+//-------------- precompute exact powers (a^b) up to MAX_VAL --------------
+const _EXACT_POWER_MAP = new Map();
+const _EXACT_POWER_LIST = [];
+(function precompute() {
+  const sqrtMax = Math.floor(Math.sqrt(MAX_VAL));
+  for (let b = 2; b <= sqrtMax; b++) {
+    let p = b * b;
+    let e = 2;
+    while (p <= MAX_VAL) {
+      if (!_EXACT_POWER_MAP.has(p)) _EXACT_POWER_MAP.set(p, []);
+      _EXACT_POWER_MAP.get(p).push([b, e]);
+      _EXACT_POWER_LIST.push([p, b, e]);
+      e++;
+      p *= b;
+    }
+  }
+  _EXACT_POWER_LIST.sort((x, y) => x[0] - y[0]);
+})();
+const _EXACT_POWER_VALUES = _EXACT_POWER_LIST.map(t => t[0]);
+
+//-------------- balanced add tree --------------
+function buildBalanced(nodes) {
+  if (nodes.length === 0) return null;
+  let level = nodes.slice();
+  while (level.length > 1) {
+    const nxt = [];
+    for (let i = 0; i < level.length; i += 2) {
+      if (i + 1 < level.length) nxt.push(["add", level[i], level[i + 1], null]);
+      else nxt.push(level[i]);
+    }
+    level = nxt;
+  }
+  return level[0];
+}
+
+//============================================================================
+//  optimization2.py port: synthesize_optimal_with_exp
+//============================================================================
+function synthesize(target, opts = {}) {
+  const disallowed = new Set(opts.disallowed || []);
+  const maxExt = opts.maxExt ?? 26;
+  const maxVal = opts.maxVal ?? MAX_VAL;
+  const depthLimit = 3;
+
+  // Local base powers within maxVal
+  const basePowers = [];
+  const maxBaseExp = Math.floor(Math.log(maxVal) / Math.log(BASE));
+  for (let e = 1; e <= maxBaseExp; e++) {
+    const v = BASE ** e;
+    if (v <= maxVal) basePowers.push(v);
+  }
+
+  let nodes = 0;
+  const buildPowerLinearCache = new Map();
+  const simpleSynthCache = new Map();
+  const nearExactPowersCache = new Map();
+  const candidateAddSplitsCache = new Map();
+  const solveCache = new Map();
+
+  function buildPowerLinear(p) {
+    if (buildPowerLinearCache.has(p)) return buildPowerLinearCache.get(p);
+    let result;
+    if (p === 0) result = [COST.lit, ["lit", null, null, 1]];
+    else if (!disallowed.has(p)) result = [COST.powbase, ["powbase", p, null, null]];
+    else {
+      const [cs, es] = buildPowerLinear(p - 1);
+      const c = cs + COST.mul + COST.powbase;
+      const e = ["mul", ["powbase", 1, null, null], es, null];
+      result = [c, e];
+    }
+    buildPowerLinearCache.set(p, result);
+    return result;
+  }
+
+  function simpleSynthesis(value) {
+    if (simpleSynthCache.has(value)) return simpleSynthCache.get(value);
+    let result;
+
+    if (value <= maxExt && !disallowed.has(value)) {
+      result = [COST.lit, ["lit", null, null, value]];
+      simpleSynthCache.set(value, result);
+      return result;
+    }
+    if (value > 0 && (value & (value - 1)) === 0) {
+      const n = log2int(value);
+      if (!disallowed.has(n)) {
+        result = [COST.powbase, ["powbase", n, null, null]];
+        simpleSynthCache.set(value, result);
+        return result;
+      }
+    }
+
+    // Binary digit decomposition
+    const digits = []; // [(digit, power), ...]
+    let temp = value;
+    let power = 0;
+    while (temp > 0) {
+      const d = temp % BASE;
+      if (d !== 0) digits.push([d, power]);
+      temp = Math.floor(temp / BASE);
+      power++;
+    }
+    if (digits.length === 0) {
+      result = [COST.lit, ["lit", null, null, 0]];
+      simpleSynthCache.set(value, result);
+      return result;
+    }
+
+    const parts = [];
+    let totalCost = 0;
+    let i = 0;
+    while (i < digits.length) {
+      const [digit, start] = digits[i];
+      if (digit === 1) {
+        let j = i;
+        while (j + 1 < digits.length && digits[j + 1][0] === 1 && digits[j + 1][1] === digits[j][1] + 1) j++;
+        const end = digits[j][1];
+        const length = end - start + 1;
+        if (length >= 3) {
+          const streakParts = [];
+          let streakCost = 0;
+          let valid = true;
+          for (let p = start; p <= end; p++) {
+            if (disallowed.has(p)) { valid = false; break; }
+            streakParts.push(["powbase", p, null, null]);
+            streakCost += COST.powbase;
+          }
+          if (valid) {
+            parts.push(buildBalanced(streakParts));
+            totalCost += streakCost + (streakParts.length - 1) * COST.add;
+          } else {
+            for (let p = start; p <= end; p++) {
+              if (disallowed.has(p)) { const [cp, ep] = buildPowerLinear(p); parts.push(ep); totalCost += cp; }
+              else { parts.push(["powbase", p, null, null]); totalCost += COST.powbase; }
+            }
+          }
+        } else {
+          for (let p = start; p <= end; p++) {
+            if (disallowed.has(p)) { const [cp, ep] = buildPowerLinear(p); parts.push(ep); totalCost += cp; }
+            else { parts.push(["powbase", p, null, null]); totalCost += COST.powbase; }
+          }
+        }
+        i = j + 1;
+      } else {
+        if (start === 0) { parts.push(["lit", null, null, digit]); totalCost += COST.lit; }
+        else { parts.push(["mul", ["lit", null, null, digit], ["powbase", start, null, null], null]); totalCost += COST.powbase + COST.mul + COST.lit; }
+        i++;
+      }
+    }
+    const expr = buildBalanced(parts);
+    if (parts.length > 1) totalCost += (parts.length - 1) * COST.add;
+    result = [totalCost, expr];
+    simpleSynthCache.set(value, result);
+    return result;
+  }
+
+  function nearExactPowers(value) {
+    if (nearExactPowersCache.has(value)) return nearExactPowersCache.get(value);
+    const lo = Math.max(0, value - maxExt);
+    const hi = Math.min(maxVal, value + maxExt);
+    const left = bisectLeft(_EXACT_POWER_VALUES, lo);
+    const right = bisectRight(_EXACT_POWER_VALUES, hi);
+    const r = _EXACT_POWER_LIST.slice(left, right);
+    nearExactPowersCache.set(value, r);
+    return r;
+  }
+
+  function candidateAddSplits(value) {
+    if (candidateAddSplitsCache.has(value)) return candidateAddSplitsCache.get(value);
+    if (value <= 1) { candidateAddSplitsCache.set(value, []); return []; }
+    const cand = new Set();
+    for (let x=1;x<=maxExt;x++) if (x > 0 && x < value) { cand.add(x); cand.add(value - x); }
+    const idx = bisectLeft(basePowers, value);
+    for (const di of [-3, -2, -1, 0, 1]) {
+      const i = idx + di;
+      if (i >= 0 && i < basePowers.length) {
+        const p = basePowers[i];
+        if (p < value) { cand.add(p); cand.add(value - p); }
+      }
+    }
+    for (let i = Math.max(0, idx - 2); i < Math.min(basePowers.length, idx + 3); i++) {
+      const p = basePowers[i];
+      if (p <= 1) continue;
+      const maxK = Math.min(32, Math.floor((value - 1) / p));
+      for (let k = 2; k <= maxK; k++) {
+        const x = k * p;
+        if (x < value) { cand.add(x); cand.add(value - x); }
+      }
+    }
+    const half = Math.floor(value / 2);
+    for (const delta of [0, 1, 2, 3, 5, 8, 13]) {
+      for (const x of [half - delta, half + delta]) if (x > 1 && x < value) cand.add(x);
+    }
+    const r = Array.from(cand).sort((a, b) => a - b);
+    candidateAddSplitsCache.set(value, r);
+    return r;
+  }
+
+  function solve(value, depth) {
+    const cacheKey = value * 16 + depth;
+    if (solveCache.has(cacheKey)) return solveCache.get(cacheKey);
+    nodes++;
+
+    let result;
+    if (!disallowed.has(value)) {
+      if (value <= maxExt) {
+        result = [COST.lit, ["lit", null, null, value]];
+        solveCache.set(cacheKey, result);
+        return result;
+      }
+      if (isPower(value, BASE)) {
+        const n = BASE === 2 ? log2int(value) : Math.round(Math.log(value) / Math.log(BASE));
+        if (!disallowed.has(n)) {
+          result = [COST.powbase, ["powbase", n, null, null]];
+          solveCache.set(cacheKey, result);
+          return result;
+        }
+      }
+    }
+
+    if (depth > depthLimit) {
+      const r = simpleSynthesis(value);
+      solveCache.set(cacheKey, r);
+      return r;
+    }
+
+    const best = [simpleSynthesis(value)];
+    function consider(cost, expr) {
+      for (let i = 0; i < best.length; i++) if (best[i][0] <= cost - 1e-9) return;
+      best.push([cost, expr]);
+      best.sort((a, b) => a[0] - b[0]);
+      if (best.length > 3) best.pop();
+    }
+
+    // 1) k * BASE^n +/- r
+    for (const anchor of basePowers) {
+      if (anchor === value) continue;
+      const n = BASE === 2 ? log2int(anchor) : Math.round(Math.log(anchor) / Math.log(BASE));
+      if (disallowed.has(n)) continue;
+      for (let k = 2; k < 32; k++) {
+        if (disallowed.has(k) || anchor * k > maxVal) continue;
+        const [costK, exprK] = solve(k, depth + 1);
+        if (anchor * k > value) {
+          const r = anchor * k - value;
+          if (r <= maxExt * 2 && !disallowed.has(r)) {
+            const [costR, exprR] = solve(r, depth + 1);
+            const total = COST.powbase + costR + COST.sub + COST.mul + costK;
+            consider(total, ["sub", ["mul", exprK, ["powbase", n, null, null], null], exprR, null]);
+          }
+        } else {
+          const r = value - anchor * k;
+          if (r <= maxExt * 2 && !disallowed.has(r)) {
+            const [costR, exprR] = solve(r, depth + 1);
+            const total = COST.powbase + costR + COST.add + COST.mul + costK;
+            consider(total, ["add", ["mul", exprK, ["powbase", n, null, null], null], exprR, null]);
+          }
+        }
+      }
+    }
+
+    // 2) BASE^n +/- k (k small)
+    for (const anchor of basePowers) {
+      if (anchor === value) continue;
+      const n = BASE === 2 ? log2int(anchor) : Math.round(Math.log(anchor) / Math.log(BASE));
+      if (disallowed.has(n)) continue;
+      if (anchor > value) {
+        const k = anchor - value;
+        if (k <= maxExt * 2 && !disallowed.has(k)) {
+          const [costK, exprK] = solve(k, depth + 1);
+          consider(COST.powbase + costK + COST.sub, ["sub", ["powbase", n, null, null], exprK, null]);
+        }
+      } else {
+        const k = value - anchor;
+        if (k <= maxExt * 2 && !disallowed.has(k)) {
+          const [costK, exprK] = solve(k, depth + 1);
+          consider(COST.powbase + costK + COST.add, ["add", ["powbase", n, null, null], exprK, null]);
+        }
+      }
+    }
+
+    // 3) Near-exact powers a^b
+    for (const [p, base, exp] of nearExactPowers(value)) {
+      if (p === value) continue;
+      if (disallowed.has(base) || disallowed.has(exp)) continue;
+      const k = Math.abs(p - value);
+      if (k <= maxExt * 2 && !disallowed.has(k)) {
+        const [costBase, exprBase] = solve(base, depth + 1);
+        const [costExp, exprExp] = solve(exp, depth + 1);
+        const [costK, exprK] = solve(k, depth + 1);
+        let total = costBase + costExp + costK + COST.exp + (p > value ? COST.sub : COST.add);
+        const op = p > value ? "sub" : "add";
+        consider(total, [op, ["pow", exprBase, exprExp, null], exprK, null]);
+      }
+    }
+
+    // 4) Exact perfect powers
+    if (_EXACT_POWER_MAP.has(value)) {
+      for (const [base, exp] of _EXACT_POWER_MAP.get(value)) {
+        if (disallowed.has(base) || disallowed.has(exp)) continue;
+        const [costBase, exprBase] = solve(base, depth + 1);
+        const [costExp, exprExp] = solve(exp, depth + 1);
+        consider(costBase + costExp + COST.exp, ["pow", exprBase, exprExp, null]);
+      }
+    }
+
+    // 5) Exact factor pairs
+    for (const [a, b] of divisorPairs(value)) {
+      if (disallowed.has(a) || disallowed.has(b)) continue;
+      const [costA, exprA] = solve(a, depth + 1);
+      const [costB, exprB] = solve(b, depth + 1);
+      consider(costA + costB + COST.mul, ["mul", exprA, exprB, null]);
+    }
+
+    // 6) Reduced additive search
+    for (const a of candidateAddSplits(value)) {
+      const b = value - a;
+      if (disallowed.has(a) || disallowed.has(b)) continue;
+      const [costA, exprA] = solve(a, depth + 1);
+      const [costB, exprB] = solve(b, depth + 1);
+      consider(costA + costB + COST.add, ["add", exprA, exprB, null]);
+
+      // factor sharing
+      if (a > 1 && b > 1) {
+        const g = gcd(a, b);
+        for (const [f, _] of divisorPairs(g)) {
+          if (f === 1) continue; // f=1 gives same as plain add
+          const a2 = a / f, b2 = b / f;
+          if (disallowed.has(f) || disallowed.has(a2) || disallowed.has(b2)) continue;
+          const [costF, exprF] = solve(f, depth + 1);
+          const [costA2, exprA2] = solve(a2, depth + 1);
+          const [costB2, exprB2] = solve(b2, depth + 1);
+          consider(costF + costA2 + costB2 + COST.mul + COST.add,
+            ["mul", exprF, ["add", exprA2, exprB2, null], null]);
+        }
+      }
+    }
+
+    result = best[0];
+    solveCache.set(cacheKey, result);
+    return result;
+  }
+
+  const [cost, ast] = solve(target, 0);
+  return { cost, ast, nodes };
+}
+
+//============================================================================
+//  optimization.py port: BFS step-min
+//============================================================================
+function leastSteps(target, allowedNumbers, allowedOperators, opts = {}) {
+  const maxStates = opts.maxStates ?? 800000;
+  const startTime = performance.now();
+  const timeoutMs = opts.timeoutMs ?? 8000;
+
+  // First-step shortcut
+  for (const num of allowedNumbers) {
+    if (num === target) return { steps: [[0, num, "+", num]], visited: 1, exhausted: false };
+  }
+
+  const queue = [];
+  const visited = new Set();
+  for (const num of allowedNumbers) {
+    queue.push([num, [[0, num, "+", num]]]);
+    visited.add(num);
+  }
+
+  let head = 0;
+  while (head < queue.length) {
+    if (visited.size > maxStates) return { steps: null, visited: visited.size, exhausted: true, reason: "state limit" };
+    if ((head & 0xfff) === 0 && performance.now() - startTime > timeoutMs)
+      return { steps: null, visited: visited.size, exhausted: true, reason: "timeout" };
+    const [cv, sl] = queue[head++];
+    for (const num of allowedNumbers) {
+      for (const op of allowedOperators) {
+        let nv = null;
+        if (op === "+") nv = cv + num;
+        else if (op === "-") nv = cv - num;
+        else if (op === "*") nv = cv * num;
+        else if (op === "/") { if (num !== 0 && cv % num === 0) nv = cv / num; }
+        if (nv == null || nv < -1e12 || nv > 1e12) continue;
+        if (visited.has(nv)) continue;
+        const newSteps = sl.concat([[cv, num, op, nv]]);
+        if (nv === target) return { steps: newSteps, visited: visited.size, exhausted: false };
+        queue.push([nv, newSteps]);
+        visited.add(nv);
+      }
+    }
+  }
+  return { steps: null, visited: visited.size, exhausted: true, reason: "no solution" };
+}
+
+//============================================================================
+//  RENDER / EVAL
+//============================================================================
+const PREC = { add: 1, sub: 1, mul: 2, pow: 3 };
+
+// flatten left-associative chains for display: ((a+b)+c) -> [a,b,c]
+function flattenAdd(node) {
+  if (!Array.isArray(node) || node[0] !== "add") return [node];
+  return flattenAdd(node[1]).concat(flattenAdd(node[2]));
+}
+
+function renderHTML(node, parentPrec = 0) {
+  const op = node[0];
+  if (op === "lit") return `<span class="num">${node[3]}</span>`;
+  if (op === "powbase") return `<span class="pow">${BASE}<sup>${node[1]}</sup></span>`;
+  const myPrec = PREC[op];
+
+  if (op === "add") {
+    const terms = flattenAdd(node);
+    const inner = terms.map(t => renderHTML(t, myPrec + 1)).join(`<span class="op"> + </span>`);
+    return myPrec < parentPrec ? `(${inner})` : inner;
+  }
+  if (op === "sub") {
+    const inner = renderHTML(node[1], myPrec) + `<span class="op"> − </span>` + renderHTML(node[2], myPrec + 1);
+    return myPrec < parentPrec ? `(${inner})` : inner;
+  }
+  if (op === "mul") {
+    const inner = renderHTML(node[1], myPrec) + `<span class="op"> × </span>` + renderHTML(node[2], myPrec + 1);
+    return myPrec < parentPrec ? `(${inner})` : inner;
+  }
+  if (op === "pow") {
+    const inner = renderHTML(node[1], myPrec + 1) + `<span class="op">^</span>` + renderHTML(node[2], myPrec);
+    return myPrec < parentPrec ? `(${inner})` : inner;
+  }
+  return "?";
+}
+
+function renderText(node, parentPrec = 0) {
+  const op = node[0];
+  if (op === "lit") return String(node[3]);
+  if (op === "powbase") return `${BASE}**${node[1]}`;
+  const myPrec = PREC[op];
+  if (op === "add") {
+    const terms = flattenAdd(node);
+    const inner = terms.map(t => renderText(t, myPrec + 1)).join(" + ");
+    return myPrec < parentPrec ? `(${inner})` : inner;
+  }
+  if (op === "sub") {
+    const inner = renderText(node[1], myPrec) + " - " + renderText(node[2], myPrec + 1);
+    return myPrec < parentPrec ? `(${inner})` : inner;
+  }
+  if (op === "mul") {
+    const inner = renderText(node[1], myPrec) + "*" + renderText(node[2], myPrec + 1);
+    return myPrec < parentPrec ? `(${inner})` : inner;
+  }
+  if (op === "pow") {
+    const inner = renderText(node[1], myPrec + 1) + "**" + renderText(node[2], myPrec);
+    return myPrec < parentPrec ? `(${inner})` : inner;
+  }
+  return "?";
+}
+
+function evalNode(node) {
+  const op = node[0];
+  if (op === "lit") return node[3];
+  if (op === "powbase") return BASE ** node[1];
+  if (op === "add") return evalNode(node[1]) + evalNode(node[2]);
+  if (op === "sub") return evalNode(node[1]) - evalNode(node[2]);
+  if (op === "mul") return evalNode(node[1]) * evalNode(node[2]);
+  if (op === "pow") return evalNode(node[1]) ** evalNode(node[2]);
+  return NaN;
+}
+
+// Walk the tree post-order to produce a "build steps" list.
+function buildSteps(node, list = [], seen = new Map()) {
+  const op = node[0];
+  if (op === "lit" || op === "powbase") {
+    const v = evalNode(node);
+    const key = renderText(node);
+    if (!seen.has(key)) {
+      seen.set(key, true);
+      list.push({ kind: op, expr: renderHTML(node), value: v });
+    }
+    return list;
+  }
+  buildSteps(node[1], list, seen);
+  buildSteps(node[2], list, seen);
+  const v = evalNode(node);
+  const key = renderText(node);
+  if (!seen.has(key)) {
+    seen.set(key, true);
+    list.push({ kind: op, expr: renderHTML(node), value: v });
+  }
+  return list;
+}
+
+//============================================================================
+//  GUI
+//============================================================================
+const $ = (id) => document.getElementById(id);
+const targetIn = $("target"), maxExtIn = $("maxExt"), engineIn = $("engine"), disallowedIn = $("disallowed"), bfsOpsIn = $("bfsOps"), bfsOpsField = $("bfsOpsField"), runBtn = $("runBtn"), enginestat = $("enginestat");
+
+document.querySelectorAll(".preset").forEach(b => b.addEventListener("click", () => { targetIn.value = b.dataset.target; run(); }));
+engineIn.addEventListener("change", () => {
+  bfsOpsField.style.display = engineIn.value === "bfs" ? "" : "none";
+  enginestat.textContent = "ENGINE: " + (engineIn.value === "bfs" ? "BFS-MIN" : "COST-OPT");
+});
+runBtn.addEventListener("click", run);
+[targetIn, maxExtIn, disallowedIn].forEach(el => el.addEventListener("keydown", e => { if (e.key === "Enter") run(); }));
+
+function parseInputs() {
+  const t = targetIn.value.trim().replace(/[, _]/g, "");
+  const target = parseInt(t, 10);
+  if (!Number.isFinite(target) || target < 0) throw new Error("Target must be a non-negative integer.");
+  if (target > MAX_VAL) throw new Error(`Target exceeds max (2^31 − 1 = ${MAX_VAL}).`);
+  const maxExt = parseInt(maxExtIn.value, 10);
+  if (!Number.isFinite(maxExt) || maxExt < 1) throw new Error("U must be ≥ 1.");
+  const disallowedRaw = disallowedIn.value.trim();
+  const disallowed = [];
+  if (disallowedRaw) {
+    for (const tok of disallowedRaw.split(/[,\s]+/)) {
+      if (!tok) continue;
+      const n = parseInt(tok, 10);
+      if (!Number.isFinite(n)) throw new Error(`Disallowed list contains non-integer: "${tok}"`);
+      disallowed.push(n);
+    }
+  }
+  return { target, maxExt, disallowed };
+}
+
+function renderBitBreakdown(target, maxExt) {
+  const labels = [];
+  const bits = [];
+  const setList = [];
+  for (let i = 31; i >= 0; i--) {
+    labels.push(`<div class="bit-label">${i}</div>`);
+    // Floor-based check (safe past bit 30 where JS signed bitops break)
+    const set = ((Math.floor(target / Math.pow(2, i)) % 2) === 1);
+    bits.push(`<div class="bit ${set ? "set" : ""}" title="2^${i} = ${Math.pow(2, i)}">${set ? "1" : "0"}</div>`);
+    if (set) setList.push({ p: i, val: Math.pow(2, i) });
+  }
+  setList.sort((a, b) => b.p - a.p);
+  const chips = setList.map(x => `<span class="bit-chip">2<sup>${x.p}</sup> = ${x.val.toLocaleString()}</span>`).join("");
+  $("binMeta").textContent = `DEC=${target.toLocaleString()} / HEX=0x${target.toString(16).toUpperCase()} / BIN=${target.toString(2)}`;
+  $("binPanel").innerHTML = `
+    <div class="bit-labels">${labels.join("")}</div>
+    <div class="bits-grid">${bits.join("")}</div>
+    <div class="bit-list">${chips || '<span style="color:var(--text-faint);">target = 0 (no set bits)</span>'}</div>
+  `;
+}
+
+function renderResult(target, ast, cost, nodesCount, ms, expectedValue, mode) {
+  const html = renderHTML(ast);
+  const text = renderText(ast);
+  const actual = evalNode(ast);
+  const verified = actual === expectedValue;
+
+  $("exprPanel").innerHTML = `
+    <div class="expr-wrap">
+      <div class="expr">${html}</div>
+      <button class="ghost copy-btn" id="copyBtn">COPY</button>
+    </div>
+    <div style="margin-top:10px;font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1.5px;">Plaintext</div>
+    <pre style="margin-top:6px;padding:10px;background:var(--bg);border:1px solid var(--line);font-size:12px;color:var(--text-dim);white-space:pre-wrap;word-break:break-all;">${text.replace(/</g, "&lt;")}</pre>
+  `;
+  $("exprMeta").textContent = `≡ ${actual.toLocaleString()}${verified ? "" : " ⚠ MISMATCH"}`;
+  $("copyBtn").onclick = async () => {
+    try { await navigator.clipboard.writeText(text); $("copyBtn").textContent = "COPIED"; setTimeout(() => $("copyBtn").textContent = "COPY", 1200); }
+    catch (e) { $("copyBtn").textContent = "FAIL"; }
+  };
+
+  const costStr = mode === "bfs" ? `${nodesCount}` : cost.toFixed(2);
+  const costLabel = mode === "bfs" ? "Steps" : "Cost";
+  $("statsPanel").innerHTML = `
+    <div class="stat"><div class="stat-label">${costLabel}</div><div class="stat-value amber">${costStr}</div></div>
+    <div class="stat"><div class="stat-label">Verified</div><div class="stat-value ${verified ? "green" : "red"}">${verified ? "OK" : "FAIL"}</div></div>
+    <div class="stat"><div class="stat-label">${mode === "bfs" ? "States visited" : "Search nodes"}</div><div class="stat-value cyan">${nodesCount.toLocaleString()}</div></div>
+    <div class="stat"><div class="stat-label">Time</div><div class="stat-value">${ms.toFixed(1)} ms</div></div>
+  `;
+
+  // Build steps view
+  const steps = buildSteps(ast);
+  const stepsHtml = steps.map((s, i) => {
+    const cls = s.kind === "lit" ? "literal" : s.kind === "powbase" ? "power" : "";
+    return `<div class="step ${cls}">
+      <div class="step-idx">${String(i + 1).padStart(2, "0")}</div>
+      <div><span class="step-expr">${s.expr}</span><span class="step-eq"> = </span><span class="step-val">${s.value.toLocaleString()}</span></div>
+    </div>`;
+  }).join("");
+  $("stepsPanel").innerHTML = stepsHtml || `<div class="empty">// no steps</div>`;
+  $("stepsMeta").textContent = `${steps.length} subexpressions`;
+}
+
+function renderBfsSteps(target, steps, visited, ms) {
+  const html = steps.map((s, i) => {
+    const [cv, n, op, nv] = s;
+    if (i === 0) {
+      return `<div class="step literal">
+        <div class="step-idx">${String(i + 1).padStart(2, "0")}</div>
+        <div><span class="step-expr"><span class="num">${n}</span></span><span class="step-eq"> = </span><span class="step-val">${nv.toLocaleString()}</span></div>
+      </div>`;
+    }
+    const opChar = op === "*" ? " × " : op === "/" ? " ÷ " : ` ${op} `;
+    return `<div class="step">
+      <div class="step-idx">${String(i + 1).padStart(2, "0")}</div>
+      <div><span class="step-expr"><span class="num">${cv.toLocaleString()}</span><span class="op">${opChar}</span><span class="num">${n}</span></span><span class="step-eq"> = </span><span class="step-val">${nv.toLocaleString()}</span></div>
+    </div>`;
+  }).join("");
+
+  const text = bfsToExpr(steps);
+  $("exprPanel").innerHTML = `
+    <div class="expr-wrap">
+      <div class="expr">${escapeHtml(text)}</div>
+      <button class="ghost copy-btn" id="copyBtn">COPY</button>
+    </div>
+  `;
+  const verified = steps.length > 0 && steps[steps.length - 1][3] === target;
+  $("exprMeta").textContent = `≡ ${steps.length ? steps[steps.length - 1][3].toLocaleString() : 0}${verified ? "" : " ⚠ MISMATCH"}`;
+  $("copyBtn").onclick = async () => { try { await navigator.clipboard.writeText(text); $("copyBtn").textContent = "COPIED"; setTimeout(() => $("copyBtn").textContent = "COPY", 1200); } catch (_) { } };
+
+  $("statsPanel").innerHTML = `
+    <div class="stat"><div class="stat-label">Steps</div><div class="stat-value amber">${steps.length}</div></div>
+    <div class="stat"><div class="stat-label">Verified</div><div class="stat-value ${verified ? "green" : "red"}">${verified ? "OK" : "FAIL"}</div></div>
+    <div class="stat"><div class="stat-label">States visited</div><div class="stat-value cyan">${visited.toLocaleString()}</div></div>
+    <div class="stat"><div class="stat-label">Time</div><div class="stat-value">${ms.toFixed(1)} ms</div></div>
+  `;
+
+  $("stepsPanel").innerHTML = html;
+  $("stepsMeta").textContent = `${steps.length} steps`;
+}
+
+function bfsToExpr(steps) {
+  if (steps.length === 0) return "";
+  let acc = String(steps[0][3]);
+  for (let i = 1; i < steps.length; i++) {
+    const [cv, n, op, nv] = steps[i];
+    acc = `(${acc}${op}${n})`;
+  }
+  return acc;
+}
+
+function escapeHtml(s) { return s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+
+let runToken = 0;
+function run() {
+  let inputs;
+  try { inputs = parseInputs(); }
+  catch (e) {
+    $("exprPanel").innerHTML = `<div class="error">${e.message}</div>`;
+    $("statsPanel").innerHTML = `<div class="stat"><div class="stat-label">Cost</div><div class="stat-value">—</div></div>`;
+    $("stepsPanel").innerHTML = `<div class="empty">// no result</div>`;
+    return;
+  }
+  const { target, maxExt, disallowed } = inputs;
+
+  renderBitBreakdown(target, maxExt);
+
+  if (target === 0) {
+    $("exprPanel").innerHTML = `<div class="expr"><span class="num">0</span></div>`;
+    $("exprMeta").textContent = "≡ 0";
+    $("statsPanel").innerHTML = `
+      <div class="stat"><div class="stat-label">Cost</div><div class="stat-value amber">0.00</div></div>
+      <div class="stat"><div class="stat-label">Verified</div><div class="stat-value green">OK</div></div>
+      <div class="stat"><div class="stat-label">Search nodes</div><div class="stat-value cyan">0</div></div>
+      <div class="stat"><div class="stat-label">Time</div><div class="stat-value">0.0 ms</div></div>`;
+    $("stepsPanel").innerHTML = `<div class="empty">// trivial</div>`;
+    return;
+  }
+
+  const myToken = ++runToken;
+  $("exprPanel").innerHTML = `<div class="computing">computing</div>`;
+  $("statsPanel").innerHTML = `
+    <div class="stat"><div class="stat-label">Cost</div><div class="stat-value">…</div></div>
+    <div class="stat"><div class="stat-label">Verified</div><div class="stat-value">…</div></div>
+    <div class="stat"><div class="stat-label">Search nodes</div><div class="stat-value">…</div></div>
+    <div class="stat"><div class="stat-label">Time</div><div class="stat-value">…</div></div>`;
+  $("stepsPanel").innerHTML = `<div class="computing">computing</div>`;
+  runBtn.disabled = true;
+
+  // Defer to next tick so UI repaints
+  setTimeout(() => {
+    if (myToken !== runToken) return;
+    try {
+      if (engineIn.value === "bfs") {
+        const ops = bfsOpsIn.value.split(",");
+        const allowedNumbers = [];
+        for (let i = 1; i <= maxExt; i++) if (!disallowed.includes(i)) allowedNumbers.push(i);
+        const t0 = performance.now();
+        const r = leastSteps(target, allowedNumbers, ops, { maxStates: 800000, timeoutMs: 8000 });
+        const ms = performance.now() - t0;
+        if (r.steps == null) {
+          $("exprPanel").innerHTML = `<div class="error">BFS aborted: ${r.reason}. Visited ${r.visited.toLocaleString()} states. Try a smaller target or use the Cost-optimal engine.</div>`;
+          $("statsPanel").innerHTML = `
+            <div class="stat"><div class="stat-label">Steps</div><div class="stat-value red">—</div></div>
+            <div class="stat"><div class="stat-label">Verified</div><div class="stat-value red">FAIL</div></div>
+            <div class="stat"><div class="stat-label">States visited</div><div class="stat-value cyan">${r.visited.toLocaleString()}</div></div>
+            <div class="stat"><div class="stat-label">Time</div><div class="stat-value">${ms.toFixed(1)} ms</div></div>`;
+          $("stepsPanel").innerHTML = `<div class="empty">// no result</div>`;
+        } else {
+          renderBfsSteps(target, r.steps, r.visited, ms);
+        }
+      } else {
+        const t0 = performance.now();
+        const { cost, ast, nodes } = synthesize(target, { maxExt, disallowed });
+        const ms = performance.now() - t0;
+        renderResult(target, ast, cost, nodes, ms, target, "cost");
+      }
+    } catch (e) {
+      console.error(e);
+      $("exprPanel").innerHTML = `<div class="error">Error: ${e.message}</div>`;
+    } finally {
+      runBtn.disabled = false;
+    }
+  }, 30);
+}
+
+// Auto-run on load
+window.addEventListener("DOMContentLoaded", () => { run(); });
+
+</script>
+
+</body>
+</html>
+
