@@ -4,6 +4,7 @@ from optimization2 import *
 BITS_COUNT = 32
 U = 27  # adjustable merge threshold
 
+_debounce_timer = None
 
 # -------------------------------------------------------
 # Bit breakdown
@@ -18,7 +19,7 @@ def int_to_bit_details(n):
 # -------------------------------------------------------
 # GUI callback
 # -------------------------------------------------------
-def update_bits(event=None):
+def _do_update_bits():
     bits_text.delete("1.0", tk.END)
 
     entry_val = entry.get()
@@ -48,6 +49,13 @@ def update_bits(event=None):
 
     except ValueError:
         bits_text.insert(tk.END, "Enter a valid integer.")
+
+
+def update_bits(event=None):
+    global _debounce_timer
+    if _debounce_timer is not None:
+        root.after_cancel(_debounce_timer)
+    _debounce_timer = root.after(150, _do_update_bits)
 
 
 # -------------------------------------------------------

@@ -426,7 +426,7 @@
         if (_divisorPairsCache.has(n)) return _divisorPairsCache.get(n);
         const out = [];
         const sq = Math.floor(Math.sqrt(n));
-        for (let a = 1; a <= sq; a++) if (n % a === 0) out.push([a, n / a]);
+        for (let a = 2; a <= sq; a++) if (n % a === 0) out.push([a, n / a]);
         _divisorPairsCache.set(n, out);
         return out;
       }
@@ -435,7 +435,6 @@
       function bisectRight(arr, x) { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >>> 1; if (arr[m] <= x) lo = m + 1; else hi = m; } return lo; }
       
       //-------------- precompute exact powers (a^b) up to MAX_VAL --------------
-      const _EXACT_POWER_MAP = new Map();
       const _EXACT_POWER_LIST = [];
       (function precompute() {
         const sqrtMax = Math.floor(Math.sqrt(MAX_VAL));
@@ -443,8 +442,6 @@
           let p = b * b;
           let e = 2;
           while (p <= MAX_VAL) {
-            if (!_EXACT_POWER_MAP.has(p)) _EXACT_POWER_MAP.set(p, []);
-            _EXACT_POWER_MAP.get(p).push([b, e]);
             _EXACT_POWER_LIST.push([p, b, e]);
             e++;
             p *= b;
@@ -453,22 +450,237 @@
         _EXACT_POWER_LIST.sort((x, y) => x[0] - y[0]);
       })();
       const _EXACT_POWER_VALUES = _EXACT_POWER_LIST.map(t => t[0]);
+
+      //-------------- precompute base powers --------------
+      const _BASE_POWERS = [];
+      for (let v = BASE; v <= MAX_VAL; v *= BASE) _BASE_POWERS.push(v);
       
       //-------------- balanced add tree --------------
       function buildBalanced(nodes) {
-        if (nodes.length === 0) return null;
-        let level = nodes.slice();
-        while (level.length > 1) {
-          const nxt = [];
-          for (let i = 0; i < level.length; i += 2) {
-            if (i + 1 < level.length) nxt.push(["add", level[i], level[i + 1], null]);
-            else nxt.push(level[i]);
+        let n = nodes.length;
+        if (n === 0) return null;
+        while (n > 1) {
+          let write = 0;
+          let read = 0;
+          while (read < n) {
+            const left = nodes[read];
+            read++;
+            if (read < n) {
+              nodes[write] = ["add", left, nodes[read], null];
+              read++;
+            } else {
+              nodes[write] = left;
+            }
+            write++;
           }
-          level = nxt;
+          n = write;
         }
-        return level[0];
+        return nodes[0];
       }
       
+      //============================================================================
+      //  BFS-on-cost optimal DP table (ported from optimization3.py)
+      //============================================================================
+      const _DP_LIMIT = 50000;
+      let _DP_COST = null;
+      let _DP_EXPR = null;
+      let _DP_MAX_LITERAL = null;
+      let _DP_MAX_VALUE = null;
+
+      class MinHeap {
+        constructor() { this._heap = []; }
+        get size() { return this._heap.length; }
+        push(key, val) {
+          this._heap.push([key, val]);
+          let i = this._heap.length - 1;
+          while (i > 0) {
+            const p = (i - 1) >> 1;
+            if (this._heap[p][0] <= this._heap[i][0]) break;
+            [this._heap[p], this._heap[i]] = [this._heap[i], this._heap[p]];
+            i = p;
+          }
+        }
+        pop() {
+          if (this._heap.length === 0) return null;
+          const top = this._heap[0];
+          const last = this._heap.pop();
+          if (this._heap.length > 0) {
+            this._heap[0] = last;
+            let i = 0, n = this._heap.length;
+            while (true) {
+              let smallest = i;
+              const l = (i << 1) + 1, r = (i << 1) + 2;
+              if (l < n && this._heap[l][0] < this._heap[smallest][0]) smallest = l;
+              if (r < n && this._heap[r][0] < this._heap[smallest][0]) smallest = r;
+              if (smallest === i) break;
+              [this._heap[smallest], this._heap[i]] = [this._heap[i], this._heap[smallest]];
+              i = smallest;
+            }
+          }
+          return top;
+        }
+      }
+
+      function ensureOptimalTable(maxLiteral, maxValue) {
+        if (_DP_COST !== null && _DP_MAX_LITERAL === maxLiteral && _DP_MAX_VALUE === maxValue) return;
+
+        const L = _DP_LIMIT;
+        const limit = Math.min(L, maxValue);
+        const INF = Infinity;
+        const costArr = new Array(L + 1);
+        const exprArr = new Array(L + 1);
+        for (let i = 0; i <= L; i++) { costArr[i] = INF; exprArr[i] = null; }
+
+        const seeds = new Set();
+        for (let x = 0; x <= maxLiteral; x++) seeds.add(x);
+        let p = BASE;
+        while (p <= limit) { seeds.add(p); p *= BASE; }
+
+        for (const s of seeds) {
+          costArr[s] = 0;
+          if (s <= maxLiteral) {
+            exprArr[s] = ["lit", null, null, s];
+          } else {
+            exprArr[s] = ["powbase", log2int(s), null, null];
+          }
+        }
+
+        const pq = new MinHeap();
+        for (const s of seeds) pq.push(0, s);
+
+        const seedList = Array.from(seeds).sort((a, b) => a - b);
+        const smallNonSeeds = [];
+
+        while (pq.size > 0) {
+          const [curCost, val] = pq.pop();
+          if (curCost > costArr[val]) continue;
+
+          for (const seed of seedList) {
+            const seedCost = costArr[seed];
+
+            // add
+            const addVal = val + seed;
+            if (addVal <= limit) {
+              const newCost = curCost + seedCost + COST.add;
+              if (newCost < costArr[addVal]) {
+                costArr[addVal] = newCost;
+                exprArr[addVal] = ["add", exprArr[val], exprArr[seed], null];
+                pq.push(newCost, addVal);
+              }
+            }
+
+            // sub: val - seed
+            if (val >= seed) {
+              const subVal = val - seed;
+              const newCost = curCost + seedCost + COST.sub;
+              if (newCost < costArr[subVal]) {
+                costArr[subVal] = newCost;
+                exprArr[subVal] = ["sub", exprArr[val], exprArr[seed], null];
+                pq.push(newCost, subVal);
+              }
+            }
+
+            // sub: seed - val
+            if (seed >= val) {
+              const subVal = seed - val;
+              const newCost = curCost + seedCost + COST.sub;
+              if (newCost < costArr[subVal]) {
+                costArr[subVal] = newCost;
+                exprArr[subVal] = ["sub", exprArr[seed], exprArr[val], null];
+                pq.push(newCost, subVal);
+              }
+            }
+
+            // mul
+            const mulVal = val * seed;
+            if (mulVal <= limit && mulVal !== 0) {
+              const newCost = curCost + seedCost + COST.mul;
+              if (newCost < costArr[mulVal]) {
+                costArr[mulVal] = newCost;
+                exprArr[mulVal] = ["mul", exprArr[val], exprArr[seed], null];
+                pq.push(newCost, mulVal);
+              }
+            }
+          }
+
+          // pow: val ** seed
+          if (val >= 2) {
+            for (const seed of seedList) {
+              if (seed >= 2 && seed <= 15) {
+                const powVal = Math.pow(val, seed);
+                if (powVal <= limit && Number.isInteger(powVal)) {
+                  const newCost = curCost + costArr[seed] + COST.pow;
+                  if (newCost < costArr[powVal]) {
+                    exprArr[powVal] = ["pow", exprArr[val], exprArr[seed], null];
+                    costArr[powVal] = newCost;
+                    pq.push(newCost, powVal);
+                  }
+                }
+              }
+            }
+          }
+
+          // pow: seed ** val
+          if (val >= 2 && val <= 15) {
+            for (const seed of seedList) {
+              if (seed >= 2) {
+                const powVal = Math.pow(seed, val);
+                if (powVal <= limit && Number.isInteger(powVal)) {
+                  const newCost = curCost + costArr[seed] + COST.pow;
+                  if (newCost < costArr[powVal]) {
+                    exprArr[powVal] = ["pow", exprArr[seed], exprArr[val], null];
+                    costArr[powVal] = newCost;
+                    pq.push(newCost, powVal);
+                  }
+                }
+              }
+            }
+          }
+
+          // Non-seed × non-seed for small values
+          if (val < 200 && !seeds.has(val)) {
+            for (const other of smallNonSeeds) {
+              if (other === val) continue;
+              const mulVal2 = val * other;
+              if (mulVal2 <= limit) {
+                const newCost = curCost + costArr[other] + COST.mul;
+                if (newCost < costArr[mulVal2]) {
+                  exprArr[mulVal2] = ["mul", exprArr[val], exprArr[other], null];
+                  costArr[mulVal2] = newCost;
+                  pq.push(newCost, mulVal2);
+                }
+              }
+              const addVal2 = val + other;
+              if (addVal2 <= limit) {
+                const newCost = curCost + costArr[other] + COST.add;
+                if (newCost < costArr[addVal2]) {
+                  exprArr[addVal2] = ["add", exprArr[val], exprArr[other], null];
+                  costArr[addVal2] = newCost;
+                  pq.push(newCost, addVal2);
+                }
+              }
+            }
+          }
+
+          if (!seeds.has(val) && val < 200) {
+            smallNonSeeds.push(val);
+          }
+        }
+
+        _DP_COST = costArr;
+        _DP_EXPR = exprArr;
+        _DP_MAX_LITERAL = maxLiteral;
+        _DP_MAX_VALUE = maxValue;
+      }
+
+      function optimalLookup(value) {
+        if (_DP_COST !== null && value <= _DP_LIMIT) {
+          const c = _DP_COST[value];
+          if (c !== Infinity) return [c, _DP_EXPR[value]];
+        }
+        return null;
+      }
+
       //============================================================================
       //  optimization2.py port: synthesize_optimal_with_exp
       //============================================================================
@@ -479,18 +691,18 @@
         const depthLimit = opts.depthLimit ?? 4;
       
         // Local base powers within maxVal
-        const basePowers = [];
-        const maxBaseExp = Math.floor(Math.log(maxVal) / Math.log(BASE));
-        for (let e = 1; e <= maxBaseExp; e++) {
-          const v = BASE ** e;
-          if (v <= maxVal) basePowers.push(v);
-        }
+        const basePowers = maxVal < MAX_VAL
+          ? _BASE_POWERS.slice(0, bisectRight(_BASE_POWERS, maxVal))
+          : _BASE_POWERS;
       
         let nodes = 0;
+        let dpHits = 0;
+        ensureOptimalTable(maxExt, maxVal);
+        const M2 = maxExt * 2;
         const simpleSynthCache = new Map();
         const nearExactPowersCache = new Map();
         const candidateAddSplitsCache = new Map();
-        const solveCache = Array.from({ length: depthLimit + 2 }, () => new Map());
+        const solveCache = new Map();
       
         function simpleSynthesis(value) {
           if (simpleSynthCache.has(value)) return simpleSynthCache.get(value);
@@ -513,9 +725,8 @@
           let temp = value;
           let power = 0;
           while (temp > 0) {
-            const d = temp % BASE;
-            if (d !== 0) digits.push([d, power]);
-            temp = Math.floor(temp / BASE);
+            if (temp & 1) digits.push([1, power]);
+            temp >>>= 1;
             power++;
           }
           if (digits.length === 0) {
@@ -537,13 +748,16 @@
               if (length >= 3) {
                 const cost_uncompressed=length*COST.powbase + (length - 1) * COST.add;
                 const cost_compressed=COST.sub+2*COST.powbase;
-                if (cost_uncompressed<cost_compressed || Math.pow(BASE,end+1)>=maxVal || BASE!=2){
-                  const streakParts = [];
-                  for (let p = start; p <= end; p++) {
-                    streakParts.push(["powbase", p, null, null]);
-                  }
+                const canCompress = BASE === 2 &&
+                    Math.pow(BASE, end + 1) < maxVal &&
+                    cost_compressed <= cost_uncompressed;
+                if (!canCompress){
+                  const streakParts = Array.from(
+                    { length },
+                    (_, i) => ["powbase", start + i, null, null]
+                  );
                   parts.push(buildBalanced(streakParts));
-                  totalCost += const_uncompressed;
+                  totalCost += cost_uncompressed;
                 } else {
                   parts.push(["sub", ["powbase", end + 1, null, null], ["powbase", start, null, null], null]);
                   totalCost += cost_compressed;
@@ -569,8 +783,8 @@
       
         function nearExactPowers(value) {
           if (nearExactPowersCache.has(value)) return nearExactPowersCache.get(value);
-          const lo = Math.max(0, value - maxExt);
-          const hi = Math.min(maxVal, value + maxExt);
+          const lo = Math.max(0, value - M2);
+          const hi = Math.min(maxVal, value + M2);
           const left = bisectLeft(_EXACT_POWER_VALUES, lo);
           const right = bisectRight(_EXACT_POWER_VALUES, hi);
           const r = _EXACT_POWER_LIST.slice(left, right);
@@ -582,9 +796,10 @@
           if (candidateAddSplitsCache.has(value)) return candidateAddSplitsCache.get(value);
           if (value <= 1) { return []; }
           const cand = new Set();
-          for (let x=1;x<=Math.max(maxExt,32)*2;x++) if (x > 0 && x <= value) { cand.add(x); cand.add(value - x); }
+          const maxTest = Math.max(maxExt, 32) * 2;
+          for (let x = 1; x <= maxTest; x++) if (x <= value) { cand.add(x); cand.add(value - x); }
           const idx = bisectLeft(basePowers, value);
-          for (const di of [-5, -4, -3, -2, -1, 0, 1]) {
+          for (let di = -5; di <= 1; di++) {
             const i = idx + di;
             if (i >= 0 && i < basePowers.length) {
               const p = basePowers[i];
@@ -602,146 +817,179 @@
           }
           const half = Math.floor(value / 2);
           for (const delta of [0, 1, 2, 3, 5, 8, 13]) {
-            for (const x of [half - delta, half + delta]) if (x > 1 && x < value) cand.add(x);
+            const x1 = half - delta, x2 = half + delta;
+            if (x1 > 1 && x1 < value) cand.add(x1);
+            if (x2 > 1 && x2 < value) cand.add(x2);
           }
-          const r = Array.from(cand).sort((a, b) => a - b);
+          const r = Array.from(cand).sort((a, b) => Math.abs(a - half) - Math.abs(b - half));
           candidateAddSplitsCache.set(value, r);
           return r;
         }
 
         function solve(value, depth) {
-          const cache = solveCache[depth];
-          if (cache.has(value)) return cache.get(value);
+          const cached = solveCache.get(value);
+          if (cached && cached.d >= depth) return [cached.c, cached.e];
+          if (disallowed.size === 0) {
+            const dpResult = optimalLookup(value);
+            if (dpResult !== null) {
+              dpHits++;
+              solveCache.set(value, { c: dpResult[0], e: dpResult[1], d: depthLimit });
+              return dpResult;
+            }
+          }
           nodes++;
       
           let result;
           if (!disallowed.has(value)) {
             if (value <= maxExt) {
               result = [COST.lit, ["lit", null, null, value]];
-              cache.set(value, result);
+              solveCache.set(value, { c: result[0], e: result[1], d: depth });
               return result;
             }
             if (isPower(value, BASE)) {
               const n = BASE === 2 ? log2int(value) : Math.round(Math.log(value) / Math.log(BASE));
-              // n is always the exponent, so powbase means BASE^n
               result = [COST.powbase, ["powbase", n, null, null]];
-              cache.set(value, result);
+              solveCache.set(value, { c: result[0], e: result[1], d: depth });
               return result;
             }
           }
       
           if (depth <= 0) {
             const r = simpleSynthesis(value);
-            cache.set(value, r);
+            solveCache.set(value, { c: r[0], e: r[1], d: depth });
             return r;
           }
           let [best_cost, best_expr] = simpleSynthesis(value)
 
-          function consider(cost, expr) {
-            if (cost >= best_cost - 1e-12)
-                return;
-            best_cost = cost;
-            best_expr = expr;
-          }
-      
           // 1) k * BASE^n +/- r
           if (COST.powbase < best_cost)
           for (const anchor of basePowers) {
             if (anchor === value) continue;
             const n = BASE === 2 ? log2int(anchor) : Math.round(Math.log(anchor) / Math.log(BASE));
-            for (let k = 1; k < 32; k++) {
-              if (disallowed.has(k)) continue;
-              if (anchor * k > maxVal) break;
-              const [costK, exprK] = solve(k, depth - 1);
-      
+            const lo = Math.max(1, Math.ceil((value - M2) / anchor));
+            const hi = Math.min(31, Math.floor((value + M2) / anchor), Math.floor(maxVal / anchor));
+            if (lo > hi) continue;
+            for (let k = lo; k <= hi; k++) {
               const delta = value - anchor * k;
               const r = Math.abs(delta);
-      
-              if (r <= maxExt * 2 && !disallowed.has(r)) {
-                const op = delta >= 0 ? "add" : "sub";
-                const opCost = delta >= 0 ? COST.add : COST.sub;
-      
-                const current = COST.powbase + (COST.mul + costK)*(k!=1);
-                const optimistic = current + opCost*(r!=0);
-      
-                if (optimistic >= best_cost) continue;
-      
-                const [costR, exprR] = solve(r, depth - 1);
-      
-                const total = optimistic + costR*(r!=0);
-                let b=["powbase", n, null, null];
-                if (k!=1)
-                  b=["mul", exprK, b, null];
-                if (r!=0)
-                  b=[op, b, exprR, null];
-                consider(total, b);
+              if (!disallowed.has(r)) {
+                let total = COST.powbase;
+                let costK, exprK;
+                if (k !== 1) {
+                  [costK, exprK] = solve(k, depth - 1);
+                  total += COST.mul + costK;
+                }
+                if (r) total += delta < 0 ? COST.sub : COST.add;
+                if (total >= best_cost) continue;
+                let costR, exprR;
+                if (r) {
+                  [costR, exprR] = solve(r, depth - 1);
+                  total += costR;
+                }
+                if (total >= best_cost - 1e-12) continue;
+                let b = ["powbase", n, null, null];
+                if (k !== 1)
+                  b = ["mul", exprK, b, null];
+                if (r)
+                  b = delta < 0 ? ["sub", b, exprR, null] : ["add", b, exprR, null];
+                best_cost = total;
+                best_expr = b;
               }
             }
           }
-          if (COST.pow < best_cost)
-          for (const [p, base, exp] of nearExactPowers(value)) {
-            if (
-              disallowed.has(base) || disallowed.has(exp) ||
-              base < 1 || exp < 1 || base > maxVal || exp > maxVal
-            ) continue;
+          if (COST.pow < best_cost) {
+          const powCandidates = [...nearExactPowers(value)].sort((a, b) => (simpleSynthesis(a[1])[0] + simpleSynthesis(a[2])[0]) - (simpleSynthesis(b[1])[0] + simpleSynthesis(b[2])[0]));
+          for (const [p, base, exp] of powCandidates) {
             const k = Math.abs(p - value);
-            if (k <= maxExt * 2 && !disallowed.has(k)) {
+            if (k <= M2 && !disallowed.has(k)) {
               const [costBase, exprBase] = solve(base, depth - 1);
+              if (costBase + COST.pow >= best_cost) continue;
               const [costExp, exprExp] = solve(exp, depth - 1);
               const op = p < value ? "add" : "sub";
               const opCost = p < value ? COST.add : COST.sub;
               const current = COST.pow + costBase + costExp;
               const optimistic = current + opCost*(k!=0);
               if (optimistic >= best_cost) continue;
-              const [costK, exprK] = solve(k, depth - 1);
-              const total = optimistic + costK*(k!=0);
+              let total = optimistic;
+              let costK, exprK;
+              if (k) {
+                [costK, exprK] = solve(k, depth - 1);
+                total += costK;
+              }
+              if (total >= best_cost - 1e-12) continue;
               let b=["pow", exprBase, exprExp, null];
-              if (k!=0)
+              if (k)
                 b=[op, b, exprK, null];
-              consider(total, b);
+              best_cost = total;
+              best_expr = b;
+            }
             }
           }
           // 4) Exact factor pairs
-          if (COST.mul < best_cost)
-          for (const [a, b] of divisorPairs(value)) {
-            if (disallowed.has(a) || disallowed.has(b)) continue;
+          if (COST.mul < best_cost) {
+          const pairs = [...divisorPairs(value)].sort((p1, p2) => (simpleSynthesis(p1[0])[0] + simpleSynthesis(p1[1])[0]) - (simpleSynthesis(p2[0])[0] + simpleSynthesis(p2[1])[0]));
+          for (const [a, b] of pairs) {
+            const [simpleA] = simpleSynthesis(a);
+            if (simpleA + COST.mul >= best_cost) continue;
             const [costA, exprA] = solve(a, depth - 1);
             if (costA+COST.mul >= best_cost) continue;
             const [costB, exprB] = solve(b, depth - 1);
-            consider(costA + costB + COST.mul, ["mul", exprA, exprB, null]);
+            const total = costA + costB + COST.mul;
+            if (total < best_cost - 1e-12) {
+              best_cost = total;
+              best_expr = ["mul", exprA, exprB, null];
+            }
+            }
           }
-      
+        
           // 5) Reduced additive search
-          if (COST.add < best_cost)
-          for (const a of candidateAddSplits(value)) {
+          if (COST.add < best_cost) {
+          const splits = [...candidateAddSplits(value)].sort((a, b) => (simpleSynthesis(a)[0] + simpleSynthesis(value - a)[0]) - (simpleSynthesis(b)[0] + simpleSynthesis(value - b)[0]));
+          for (const a of splits) {
             const b = value - a;
-            if (disallowed.has(a) || disallowed.has(b) || a===0 || b===0) continue;
+            if (a===0 || b===0) continue;
+            const [simpleA] = simpleSynthesis(a);
+            if (simpleA + COST.add >= best_cost) continue;
             const [costA, exprA] = solve(a, depth - 1);
             if (costA + COST.add < best_cost) {
                 const [costB, exprB] = solve(b, depth - 1);
-                consider(costA + costB + COST.add, ["add", exprA, exprB, null]);
+                const total = costA + costB + COST.add;
+                if (total < best_cost - 1e-12) {
+                  best_cost = total;
+                  best_expr = ["add", exprA, exprB, null];
+                }
             }
             // factor sharing
             if (COST.mul + COST.add < best_cost)
             if (a > 1 && b > 1) {
               const g = gcd(a, b);
-              for (const [f, _] of divisorPairs(g)) {
-                if (f === 1) continue; // f=1 gives same as plain add
-                const a2 = a / f, b2 = b / f;
-                if (disallowed.has(f) || disallowed.has(a2) || disallowed.has(b2)) continue;
-                const [costF, exprF] = solve(f, depth - 1);
-                if (costF + COST.mul >= best_cost) continue; // optimistic check
-                const [costA2, exprA2] = solve(a2, depth - 1);
-                if (costF+costA2 + COST.mul+COST.add >= best_cost) continue; // optimistic check
+              if (g <= 1) continue;
+              const gPairs = [...divisorPairs(g)].sort((p1, p2) => (simpleSynthesis(p1[0])[0] + simpleSynthesis(p1[1])[0]) - (simpleSynthesis(p2[0])[0] + simpleSynthesis(p2[1])[0]));
+              for (const [f1, f2] of gPairs) {
+                const factors = f1 === f2 ? [f1] : [f1, f2].sort((a, b) => simpleSynthesis(a)[0] - simpleSynthesis(b)[0]);
+                for (const f of factors) {
+                  if (f === 1) continue; // f=1 gives same as plain add
+                  const [simpleF] = simpleSynthesis(f);
+                  if (simpleF + COST.mul + COST.add >= best_cost) continue;
+                  const a2 = a / f, b2 = b / f;
+                  const [costF, exprF] = solve(f, depth - 1);
+                  if (costF + COST.mul + COST.add >= best_cost) continue; // optimistic check
+                  const [costA2, exprA2] = solve(a2, depth - 1);
+                  if (costF+costA2 + COST.mul+COST.add >= best_cost) continue; // optimistic check
                 const [costB2, exprB2] = solve(b2, depth - 1);
-                consider(costF + costA2 + costB2 + COST.mul + COST.add,
-                  ["mul", exprF, ["add", exprA2, exprB2, null], null]);
+                const total2 = costF + costA2 + costB2 + COST.mul + COST.add;
+                if (total2 < best_cost - 1e-12) {
+                  best_cost = total2;
+                  best_expr = ["mul", exprF, ["add", exprA2, exprB2, null], null];
+                }
+                }
               }
             }
           }
+          }
       
           result = [best_cost,best_expr];
-          cache.set(value, result);
+          solveCache.set(value, { c: best_cost, e: best_expr, d: depth });
           return result;
         }
         let [cost, ast] = solve(target, depthLimit);
@@ -757,39 +1005,48 @@
         const startTime = performance.now();
         const timeoutMs = opts.timeoutMs ?? 8000;
       
-        // First-step shortcut
         for (const num of allowedNumbers) {
-          if (num === target) return { steps: [[0, num, "+", num]], visited: 1, exhausted: false };
+          if (num === target) return { steps: [[0, num, "+", num]], visited: 0, exhausted: false };
         }
       
-        const queue = [];
+        const stepData = []; // [value, prevCv, prevNum, prevOp, parentIdx]
         const visited = new Set();
         for (const num of allowedNumbers) {
-          queue.push([num, [[0, num, "+", num]]]);
+          stepData.push([num, 0, num, "+", -1]);
           visited.add(num);
         }
       
         let head = 0;
-        while (head < queue.length) {
+        while (head < stepData.length) {
           if (visited.size > maxStates) return { steps: null, visited: visited.size, exhausted: true, reason: "state limit" };
           if ((head & 0xfff) === 0 && performance.now() - startTime > timeoutMs)
             return { steps: null, visited: visited.size, exhausted: true, reason: "timeout" };
-          const [cv, sl] = queue[head++];
+          const cv = stepData[head][0];
           for (const num of allowedNumbers) {
             for (const op of allowedOperators) {
               let nv = null;
               if (op === "+") nv = cv + num;
               else if (op === "-") nv = cv - num;
               else if (op === "*") nv = cv * num;
-              else if (op === "/") { if (num !== 0 && cv % num === 0) nv = cv / num; }
+              else if (op === "/") { if (num !== 0 && cv % num === 0) nv = Math.floor(cv / num); }
               if (nv == null || nv < -1e12 || nv > 1e12) continue;
               if (visited.has(nv)) continue;
-              const newSteps = sl.concat([[cv, num, op, nv]]);
-              if (nv === target) return { steps: newSteps, visited: visited.size, exhausted: false };
-              queue.push([nv, newSteps]);
+              if (nv === target) {
+                const steps = [[cv, num, op, nv]];
+                let idx = head;
+                while (idx >= 0) {
+                  const [val, prevCv, prevNum, prevOp, parentIdx] = stepData[idx];
+                  steps.push([prevCv, prevNum, prevOp, val]);
+                  idx = parentIdx;
+                }
+                steps.reverse();
+                return { steps, visited: visited.size, exhausted: false };
+              }
+              stepData.push([nv, cv, num, op, head]);
               visited.add(nv);
             }
           }
+          head++;
         }
         return { steps: null, visited: visited.size, exhausted: true, reason: "no solution" };
       }
@@ -824,7 +1081,7 @@
           return myPrec < parentPrec ? `(${inner})` : inner;
         }
         if (op === "mul") {
-          const inner = renderHTML(node[1], myPrec) + `<span class="op"> × </span>` + renderHTML(node[2], myPrec + 1);
+          const inner = renderHTML(node[1], myPrec) + `<span class="op"> × </span>` + renderHTML(node[2], myPrec);
           return myPrec < parentPrec ? `(${inner})` : inner;
         }
         if (op === "pow") {
@@ -849,7 +1106,7 @@
           return myPrec < parentPrec ? `(${inner})` : inner;
         }
         if (op === "mul") {
-          const inner = renderText(node[1], myPrec) + "*" + renderText(node[2], myPrec + 1);
+          const inner = renderText(node[1], myPrec) + "*" + renderText(node[2], myPrec);
           return myPrec < parentPrec ? `(${inner})` : inner;
         }
         if (op === "pow") {
@@ -871,25 +1128,29 @@
       }
       
       // Walk the tree post-order to produce a "build steps" list.
-      function buildSteps(node, list = [], seen = new Map()) {
-        const op = node[0];
-        if (op === "lit" || op === "powbase") {
-          const v = evalNode(node);
-          const key = renderText(node);
-          if (!seen.has(key)) {
-            seen.set(key, true);
-            list.push({ kind: op, expr: renderHTML(node), value: v });
+      // Uses bottom-up evaluation — each subtree is evaluated exactly once.
+      function buildSteps(node) {
+        const list = [];
+        const seen = new Map();
+        (function dfs(n) {
+          const op = n[0];
+          if (op === "lit" || op === "powbase") {
+            const v = op === "lit" ? n[3] : BASE ** n[1];
+            const key = renderText(n);
+            if (!seen.has(key)) { seen.set(key, true); list.push({ kind: op, expr: renderHTML(n), value: v }); }
+            return v;
           }
-          return list;
-        }
-        buildSteps(node[1], list, seen);
-        buildSteps(node[2], list, seen);
-        const v = evalNode(node);
-        const key = renderText(node);
-        if (!seen.has(key)) {
-          seen.set(key, true);
-          list.push({ kind: op, expr: renderHTML(node), value: v });
-        }
+          const lv = dfs(n[1]);
+          const rv = dfs(n[2]);
+          let v;
+          if (op === "add") v = lv + rv;
+          else if (op === "sub") v = lv - rv;
+          else if (op === "mul") v = lv * rv;
+          else if (op === "pow") v = lv ** rv;
+          const key = renderText(n);
+          if (!seen.has(key)) { seen.set(key, true); list.push({ kind: op, expr: renderHTML(n), value: v }); }
+          return v;
+        })(node);
         return list;
       }
       
@@ -974,8 +1235,8 @@
         const html = renderHTML(ast);
         const text = renderText(ast);
         const actual = evalNode(ast);
-        const verified = actual === expectedValue && cost === evalCost(ast);
-      
+        const verified = actual === expectedValue && Math.abs(cost - evalCost(ast))<1e-12;
+        console.log(`value: ${actual} vs ${expectedValue}, cost: ${cost} vs ${evalCost(ast)}`);
         $("exprPanel").innerHTML = `
           <div class="expr-wrap">
             <div class="expr">${html}</div>
@@ -1152,7 +1413,8 @@
       
         // live update COST when edited
         input.addEventListener("input", () => {
-          COST[key] = parseFloat(input.value) || 0;
+          const parsed = parseFloat(input.value);
+          if (!isNaN(parsed)) COST[key] = parsed;
       
           // optional:
           run();

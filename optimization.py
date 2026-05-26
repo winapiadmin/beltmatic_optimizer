@@ -1,4 +1,3 @@
-from collections import deque
 from typing import List, Tuple, Union
 
 Step = Tuple[Union[int, float], Union[int, float], str, Union[int, float]]
@@ -7,40 +6,43 @@ Step = Tuple[Union[int, float], Union[int, float], str, Union[int, float]]
 def leastSteps(
     target: int, allowedNumbers: List[int], allowedOperators: List[str]
 ) -> List[Step]:
-    queue = deque()
+    step_data = []  # (value, prev_cv, prev_num, prev_op, parent_idx)
     visited = set()
 
     for num in allowedNumbers:
         if num == target:
             return [(0, num, "+", num)]
-        queue.append((num, [(0, num, "+", num)]))
+        step_data.append((num, 0, num, "+", -1))
         visited.add(num)
 
-    while queue:
-        currentValue, stepsList = queue.popleft()
-
+    head = 0
+    while head < len(step_data):
+        cv = step_data[head][0]
         for num in allowedNumbers:
             for operator in allowedOperators:
                 newValue = None
                 if operator == "+":
-                    newValue = currentValue + num
+                    newValue = cv + num
                 elif operator == "-":
-                    newValue = currentValue - num
+                    newValue = cv - num
                 elif operator == "*":
-                    newValue = currentValue * num
+                    newValue = cv * num
                 elif operator == "/":
-                    if num != 0 and currentValue % num == 0:
-                        newValue = currentValue // num
+                    if num != 0 and cv % num == 0:
+                        newValue = cv // num
                 if newValue is not None and newValue not in visited:
                     if newValue == target:
-                        return stepsList + [(currentValue, num, operator, newValue)]
-                    queue.append(
-                        (
-                            newValue,
-                            stepsList + [(currentValue, num, operator, newValue)],
-                        )
-                    )
+                        steps = [(cv, num, operator, newValue)]
+                        idx = head
+                        while idx >= 0:
+                            val, prev_cv, prev_num, prev_op, parent_idx = step_data[idx]
+                            steps.append((prev_cv, prev_num, prev_op, val))
+                            idx = parent_idx
+                        steps.reverse()
+                        return steps
+                    step_data.append((newValue, cv, num, operator, head))
                     visited.add(newValue)
+        head += 1
 
     return []
 
@@ -64,10 +66,14 @@ def construct_exp(expr: List[Step]) -> str:
 
 
 def optimize_sum_with_U(target: list[int], U: int) -> str:
-    powers_of_2 = [1 << i for i in range(32) if (1 << i) <= U]
-    allowed_numbers = sorted(set(range(1, max(U, 1) + 1)) | set(powers_of_2))
-    # Now call least_steps on the sum of the decomposition
     total_target = sum(target)
+    limit = max(total_target, U) * 2
+    powers_of_2 = []
+    v = 1
+    while v <= limit:
+        powers_of_2.append(v)
+        v <<= 1
+    allowed_numbers = sorted(set(range(1, max(U, 1) + 1)) | set(powers_of_2))
 
     expr = leastSteps(
         target=total_target,

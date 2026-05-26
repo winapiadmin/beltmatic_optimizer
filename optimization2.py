@@ -1,9 +1,16 @@
 from __future__ import annotations
-import math
-import ast
-import bisect
-from typing import Optional
+import heapq
+from bisect import bisect_left, bisect_right
+from math import gcd, isqrt, log
+from dataclasses import dataclass
 from functools import cache
+
+import hashlib
+import json
+import pprint
+import random
+import time
+from pathlib import Path
 
 BASE = 2
 COST = {
@@ -15,40 +22,355 @@ COST = {
     "lit": 0.00,
 }
 
-# (operation, a, b, value)
-# powbase: BASE**value
-# add, sub, mul, pow: a (operation) b
-# lit: value
-Node = tuple[str, tuple | int | None, tuple | int | None, Optional[int]]
+
+@dataclass(frozen=True, slots=True)
+class LitNode:
+    value: int
+
+
+@dataclass(frozen=True, slots=True)
+class PowBaseNode:
+    exponent: int
+
+
+@dataclass(frozen=True, slots=True)
+class BinOpNode:
+    op: str
+    left: Node
+    right: Node
+
+
+Node = LitNode | PowBaseNode | BinOpNode
+
+
+def _tokenize(s: str) -> list:
+    tokens: list = []
+    i = 0
+    while i < len(s):
+        c = s[i]
+        if c in "()":
+            tokens.append(c)
+            i += 1
+        elif c == "+":
+            tokens.append("+")
+            i += 1
+        elif c == "-":
+            tokens.append("-")
+            i += 1
+        elif c == "*":
+            if i + 1 < len(s) and s[i + 1] == "*":
+                tokens.append("**")
+                i += 2
+            else:
+                tokens.append("*")
+                i += 1
+        elif c.isdigit():
+            j = i
+            while j < len(s) and s[j].isdigit():
+                j += 1
+            tokens.append(int(s[i:j]))
+            i = j
+        else:
+            i += 1
+    return tokens
+
+
+def _parse_primary(tokens: list, pos: int) -> tuple[Node, int]:
+    """Parse primary: '(' expr ')' | int | BASE**int"""
+    tok = tokens[pos]
+    if tok == "(":
+        pos += 1
+        node, pos = _parse_expr(tokens, pos)
+        if pos >= len(tokens) or tokens[pos] != ")":
+            raise ValueError(f"Expected ')' at position {pos}")
+        pos += 1
+        return node, pos
+    if isinstance(tok, int):
+        val = tok
+        pos += 1
+        if val == BASE and pos < len(tokens) and tokens[pos] == "**":
+            pos += 1
+            if pos < len(tokens) and isinstance(tokens[pos], int):
+                k = tokens[pos]
+                pos += 1
+                return PowBaseNode(k), pos
+            right, pos = _parse_primary(tokens, pos)
+            return BinOpNode("pow", LitNode(BASE), right), pos
+        return LitNode(val), pos
+    raise ValueError(f"Unexpected token: {tok}")
+
+
+def _parse_muldiv(tokens: list, pos: int) -> tuple[Node, int]:
+    """Parse muldiv: primary (('*' | '**') primary)*"""
+    left, pos = _parse_primary(tokens, pos)
+    while pos < len(tokens) and tokens[pos] in ("*", "**"):
+        op = tokens[pos]
+        pos += 1
+        right, pos = _parse_primary(tokens, pos)
+        if op == "**":
+            if (
+                isinstance(left, LitNode)
+                and left.value == BASE
+                and isinstance(right, LitNode)
+            ):
+                left = PowBaseNode(right.value)
+            else:
+                left = BinOpNode("pow", left, right)
+        else:
+            left = BinOpNode("mul", left, right)
+    return left, pos
+
+
+def _parse_expr(tokens: list, pos: int) -> tuple[Node, int]:
+    """Parse addsub_expr: muldiv (('+' | '-') muldiv)*"""
+    left, pos = _parse_muldiv(tokens, pos)
+    while pos < len(tokens) and tokens[pos] in ("+", "-"):
+        op = tokens[pos]
+        pos += 1
+        right, pos = _parse_muldiv(tokens, pos)
+        if op == "+":
+            left = BinOpNode("add", left, right)
+        else:
+            left = BinOpNode("sub", left, right)
+    return left, pos
+
+
+def parse_expr(s: str) -> Node:
+    tokens = _tokenize(s)
+    node, pos = _parse_expr(tokens, 0)
+    if pos != len(tokens):
+        raise ValueError(f"Unexpected trailing tokens: {tokens[pos:]}")
+    return node
+
+
+# ======================================================
+# BFS-on-cost optimal table (moved from optimization3.py)
+# ======================================================
+
+_DP_LIMIT = 50_000
+
+
+@dataclass
+class OptimalTable:
+    cost: list[float] | None = None
+    expr: list | None = None
+    config_hash: int | None = None
+
+    def ensure(
+        self,
+        max_literal: int = 26,
+        max_value: int = (1 << 31) - 1,
+    ) -> None:
+        """Build optimal-cost table for all values ≤ _DP_LIMIT using BFS-on-cost."""
+        h = hash((BASE, tuple(sorted(COST.items())), max_literal, max_value))
+        if self.cost is not None and self.config_hash == h:
+            return
+
+        L = _DP_LIMIT
+        limit = min(L, max_value)
+        INF = float("inf")
+        cost_arr: list[float] = [INF] * (L + 1)
+        expr_arr: list = [None] * (L + 1)
+
+        seeds: set[int] = set(range(max_literal + 1))
+        p = BASE
+        while p <= limit:
+            seeds.add(p)
+            p *= BASE
+
+        for s in seeds:
+            cost_arr[s] = 0.0
+            if s <= max_literal:
+                expr_arr[s] = LitNode(s)
+            else:
+                n = s.bit_length() - 1
+                expr_arr[s] = PowBaseNode(n)
+
+        pq: list[tuple[float, int]] = [(0.0, s) for s in seeds]
+        heapq.heapify(pq)
+
+        seed_list = sorted(seeds)
+        small_non_seeds: list[int] = []
+
+        while pq:
+            cur_cost, val = heapq.heappop(pq)
+            if cur_cost > cost_arr[val]:
+                continue
+
+            for seed in seed_list:
+                seed_cost = cost_arr[seed]
+
+                new_val = val + seed
+                if new_val <= limit:
+                    new_cost = cur_cost + seed_cost + COST["add"]
+                    if new_cost < cost_arr[new_val]:
+                        cost_arr[new_val] = new_cost
+                        expr_arr[new_val] = BinOpNode(
+                            "add", expr_arr[val], expr_arr[seed]
+                        )
+                        heapq.heappush(pq, (new_cost, new_val))
+
+                if val >= seed:
+                    new_val = val - seed
+                    new_cost = cur_cost + seed_cost + COST["sub"]
+                    if new_cost < cost_arr[new_val]:
+                        cost_arr[new_val] = new_cost
+                        expr_arr[new_val] = BinOpNode(
+                            "sub", expr_arr[val], expr_arr[seed]
+                        )
+                        heapq.heappush(pq, (new_cost, new_val))
+
+                if seed >= val:
+                    new_val = seed - val
+                    new_cost = cur_cost + seed_cost + COST["sub"]
+                    if new_cost < cost_arr[new_val]:
+                        cost_arr[new_val] = new_cost
+                        expr_arr[new_val] = BinOpNode(
+                            "sub", expr_arr[seed], expr_arr[val]
+                        )
+                        heapq.heappush(pq, (new_cost, new_val))
+
+                new_val = val * seed
+                if new_val <= limit and new_val != 0:
+                    new_cost = cur_cost + seed_cost + COST["mul"]
+                    if new_cost < cost_arr[new_val]:
+                        cost_arr[new_val] = new_cost
+                        expr_arr[new_val] = BinOpNode(
+                            "mul", expr_arr[val], expr_arr[seed]
+                        )
+                        heapq.heappush(pq, (new_cost, new_val))
+
+            if val >= 2:
+                for seed in seed_list:
+                    if 2 <= seed <= 15:
+                        try:
+                            new_val = val**seed
+                        except (OverflowError, ValueError):
+                            continue
+                        if new_val <= limit:
+                            new_cost = cur_cost + cost_arr[seed] + COST["pow"]
+                            if new_cost < cost_arr[new_val]:
+                                expr_arr[new_val] = BinOpNode(
+                                    "pow", expr_arr[val], expr_arr[seed]
+                                )
+                                cost_arr[new_val] = new_cost
+                                heapq.heappush(pq, (new_cost, new_val))
+
+            if 2 <= val <= 15:
+                for seed in seed_list:
+                    if seed >= 2:
+                        try:
+                            new_val = seed**val
+                        except (OverflowError, ValueError):
+                            continue
+                        if new_val <= limit:
+                            new_cost = cur_cost + cost_arr[seed] + COST["pow"]
+                            if new_cost < cost_arr[new_val]:
+                                expr_arr[new_val] = BinOpNode(
+                                    "pow", expr_arr[seed], expr_arr[val]
+                                )
+                                cost_arr[new_val] = new_cost
+                                heapq.heappush(pq, (new_cost, new_val))
+
+            if val < 200 and val not in seeds:
+                for other in small_non_seeds:
+                    if other == val:
+                        continue
+                    new_val = val * other
+                    if new_val <= limit:
+                        new_cost = cur_cost + cost_arr[other] + COST["mul"]
+                        if new_cost < cost_arr[new_val]:
+                            expr_arr[new_val] = BinOpNode(
+                                "mul", expr_arr[val], expr_arr[other]
+                            )
+                            cost_arr[new_val] = new_cost
+                            heapq.heappush(pq, (new_cost, new_val))
+                    new_val = val + other
+                    if new_val <= limit:
+                        new_cost = cur_cost + cost_arr[other] + COST["add"]
+                        if new_cost < cost_arr[new_val]:
+                            expr_arr[new_val] = BinOpNode(
+                                "add", expr_arr[val], expr_arr[other]
+                            )
+                            cost_arr[new_val] = new_cost
+                            heapq.heappush(pq, (new_cost, new_val))
+
+            if val not in seeds and val < 200:
+                small_non_seeds.append(val)
+
+        self.cost = cost_arr
+        self.expr = expr_arr
+        self.config_hash = h
+
+
+_OPTIMAL_TABLE = OptimalTable()
+
+
+def ensure_optimal_table(
+    max_literal: int = 26,
+    max_value: int = (1 << 31) - 1,
+) -> None:
+    _OPTIMAL_TABLE.ensure(max_literal, max_value)
+
+
+def optimal_lookup(value: int) -> tuple[float, Node] | None:
+    """Return (cost, expr) from the optimal table, or None if unavailable."""
+    if _OPTIMAL_TABLE.cost is not None and value <= _DP_LIMIT:
+        c = _OPTIMAL_TABLE.cost[value]
+        if c != float("inf"):
+            return c, _OPTIMAL_TABLE.expr[value]
+    return None
+
 
 def synthesize_optimal_with_exp(
     target: int,
-    disallowed: Optional[set[int]] = None,
+    disallowed: set[int] | None = None,
     max_ext: int = 26,
     max_val: int = (1 << 31) - 1,
     verbose: bool = False,
 ) -> tuple[float, str]:
     """
-    Synthesizes an optimal arithmetic expression to compute the given target integer using a set of allowed operations,
-    minimizing a cost function based on operation types and optionally avoiding certain intermediate values.
+    @brief Synthesizes a low-cost arithmetic expression for an integer target.
 
-    Parameters:
-        target (int): The integer value to synthesize an expression for.
-        disallowed (Optional[set[int]]): A set of integer values that must not appear as intermediate results.
-        max_ext (int): The maximum value for which literals are allowed in the expression.
-        max_val (int): The maximum value allowed for any intermediate computation.
-        verbose (bool): If True, prints diagnostic information during synthesis.
+    Searches for an arithmetic expression minimizing weighted operation cost
+    using addition, subtraction, multiplication, exponentiation, and BASE powers.
 
-    Returns:
-        tuple[float, str]: A tuple containing the minimal cost and the corresponding arithmetic expression as a string.
+    @param target
+        Integer value to synthesize.
+
+    @param disallowed
+        Literal constants forbidden from appearing directly in the emitted expression.
+
+    @param max_ext
+        Maximum literal value allowed for direct literal synthesis.
+
+    @param max_val
+        Maximum permitted intermediate value.
+
+    @param verbose
+        Enables diagnostic logging.
+
+    @return
+        Tuple containing:
+        - minimal estimated cost
+        - rendered expression string
+
+    @note
+        The search is heuristic and depth-limited. Optimality is not globally guaranteed.
+
+    @warning
+        Costs are floating-point values and may accumulate rounding error.
     """
 
     disallowed = disallowed or set()
     nodes = 0
+    dp_hits = 0
 
     # Keep base powers local to the current max_val.
-    max_base_exp = int(math.log(max_val, BASE))
-    base_powers = tuple(_BASE_POWERS_ALL[:bisect.bisect_right(_BASE_POWERS_ALL, max_val)])
+    if max_val >= _MAX_PRECOMP_VAL:
+        base_powers = _BASE_POWERS
+    else:
+        base_powers = tuple(_BASE_POWERS_ALL[: bisect_right(_BASE_POWERS_ALL, max_val)])
 
     depth_limit = 4
     cost_add = COST["add"]
@@ -57,34 +379,34 @@ def synthesize_optimal_with_exp(
     cost_pow = COST["pow"]
     cost_powbase = COST["powbase"]
     cost_lit = COST["lit"]
+    ensure_optimal_table(max_ext, max_val)
 
     @cache
-    def simple_synthesis(value: int) -> tuple[float, Node|None]:
+    def simple_synthesis(value: int) -> tuple[float, Node | None]:
         if value <= max_ext and value not in disallowed:
-            return cost_lit, ("lit", None, None, value)
+            return cost_lit, LitNode(value)
 
         if value > 0:
             if BASE == 2:
                 if value & (value - 1) == 0:
                     n = value.bit_length() - 1
-                    return cost_powbase, ("powbase", n, None, None)
+                    return cost_powbase, PowBaseNode(n)
             else:
-                n = int(round(math.log(value, BASE)))
+                n = int(round(log(value, BASE)))
                 if BASE**n == value:
-                    return cost_powbase, ("powbase", n, None, None)
-
+                    return cost_powbase, PowBaseNode(n)
         digits = []
         temp = value
         power = 0
         while temp:
-            temp, digit = divmod(temp, BASE)
-            if digit:
-                digits.append((digit, power))
+            if temp & 1:
+                digits.append((1, power))
+            temp >>= 1
             power += 1
         n_digits = len(digits)
 
         if not digits:
-            return cost_lit, ("lit", None, None, 0)
+            return cost_lit, LitNode(0)
 
         parts = []
         total_cost = 0.0
@@ -106,34 +428,40 @@ def synthesize_optimal_with_exp(
                 length = end - start + 1
 
                 if length >= 3:
-                    cost_uncompressed=length*cost_powbase + (length - 1) * cost_add
-                    cost_compressed=COST["sub"]+2*COST["powbase"]
-                    if cost_uncompressed<cost_compressed or BASE**(end+1)>=max_val or BASE!=2:
+                    cost_uncompressed = length * cost_powbase + (length - 1) * cost_add
+                    cost_compressed = cost_sub + 2 * cost_powbase
+                    if (
+                        cost_uncompressed < cost_compressed
+                        or BASE ** (end + 1) >= max_val
+                        or BASE != 2
+                    ):
                         streak_parts = []
 
                         for p in range(start, end + 1):
-                            streak_parts.append(("powbase", p, None, None))
+                            streak_parts.append(PowBaseNode(p))
 
                         parts.append(build_balanced(streak_parts))
                         total_cost += cost_uncompressed
                     else:
-                        parts.append(("sub", ("powbase", end + 1, None, None), ("powbase", start, None, None), None))
+                        parts.append(
+                            BinOpNode("sub", PowBaseNode(end + 1), PowBaseNode(start))
+                        )
                         total_cost += cost_compressed
                 else:
                     for p in range(start, end + 1):
-                        parts.append(("powbase", p, None, None))
+                        parts.append(PowBaseNode(p))
                         total_cost += cost_powbase
                 i = j + 1
             else:
                 if start == 0:
-                    parts.append(("lit", None, None, digit))
+                    parts.append(LitNode(digit))
                     total_cost += cost_lit
                 else:
                     parts.append(
                         (
                             "mul",
-                            ("lit", None, None, digit),
-                            ("powbase", start, None, None),
+                            LitNode(digit),
+                            PowBaseNode(start),
                             None,
                         )
                     )
@@ -146,68 +474,83 @@ def synthesize_optimal_with_exp(
 
         return total_cost, expr
 
-    @cache
-    def solve(value: int, depth: int = depth_limit) -> tuple[float, Node|None]:
-        nonlocal nodes
+    _solve_cache = {}
+
+    def solve(value: int, depth: int = depth_limit) -> tuple[float, Node | None]:
+        nonlocal nodes, dp_hits
+        cached = _solve_cache.get(value)
+        if cached is not None and cached[1] >= depth:
+            return cached[0]
+        if not disallowed:
+            dp_result = optimal_lookup(value)
+            if dp_result is not None:
+                dp_hits += 1
+                _solve_cache[value] = (dp_result, depth_limit)
+                return dp_result
         nodes += 1
         if value not in disallowed:
             if value <= max_ext:
-                return cost_lit, ("lit", None, None, value)
+                result = (cost_lit, LitNode(value))
+                _solve_cache[value] = (result, depth)
+                return result
 
             if is_power(value, BASE):
                 if BASE == 2:
                     n = value.bit_length() - 1
                 else:
-                    n = int(round(math.log(value, BASE)))
-                if n not in disallowed:
-                    return cost_powbase, ("powbase", n, None, None)
+                    n = int(round(log(value, BASE)))
+                result = (cost_powbase, PowBaseNode(n))
+                _solve_cache[value] = (result, depth)
+                return result
 
         if depth <= 0:
-            return simple_synthesis(value)
+            result = simple_synthesis(value)
+            _solve_cache[value] = (result, depth)
+            return result
 
         best_cost, best_expr = simple_synthesis(value)
-
-        def consider(cost: float, expr: Node|None) -> None:
-            nonlocal best_cost, best_expr
-            if cost >= best_cost - 1e-12:
-                return
-            best_cost = cost
-            best_expr = expr
 
         if cost_powbase < best_cost:
             for n, anchor in enumerate(base_powers, start=1):
                 if anchor == value:
                     continue
-                if n in disallowed:
-                    continue
-                for k in range(1, 32):
-                    if k in disallowed:
-                        continue
-                    if anchor * k > max_val:
-                        break
-
-                    cost_k, expr_k = solve(k, depth - 1)
+                lo = max(1, (value - max_ext * 2 + anchor - 1) // anchor)
+                hi = min(31, (value + max_ext * 2) // anchor, max_val // anchor)
+                for k in range(lo, hi + 1):
                     delta = value - anchor * k
                     r = abs(delta)
-                    if r <= max_ext * 2 and r not in disallowed:
-                        op_cost = cost_sub if delta < 0 else cost_add
-                        total = cost_powbase + op_cost * (r != 0) + (cost_mul + cost_k) * (k != 1)
+                    if r not in disallowed:
+                        total = cost_powbase
+                        if k != 1:
+                            cost_k, expr_k = solve(k, depth - 1)
+                            total += cost_mul + cost_k
+                        if r:
+                            total += cost_sub if delta < 0 else cost_add
                         if total >= best_cost:
                             continue
-                        cost_r, expr_r = solve(r, depth - 1)
-                        total += cost_r * (r != 0)
-                        entry = ("powbase", n, None, None)
+                        if r:
+                            cost_r, expr_r = solve(r, depth - 1)
+                            total += cost_r
+                        if total >= best_cost - 1e-12:
+                            continue
+                        entry = PowBaseNode(n)
                         if k != 1:
-                            entry = ("mul", expr_k, entry, None)
-                        if r != 0:
-                            entry = ("sub", entry, expr_r, None) if delta < 0 else ("add", entry, expr_r, None)
-                        consider(total, entry)
+                            entry = BinOpNode("mul", expr_k, entry)
+                        if r:
+                            entry = (
+                                BinOpNode("sub", entry, expr_r)
+                                if delta < 0
+                                else BinOpNode("add", entry, expr_r)
+                            )
+                        best_cost = total
+                        best_expr = entry
 
         if cost_pow < best_cost:
-            for p, base, exp in near_exact_powers(value, max_ext, max_val):
-                if base in disallowed or exp in disallowed:
-                    continue
-
+            pow_candidates = sorted(
+                near_exact_powers(value, max_ext, max_val),
+                key=lambda pe: simple_synthesis(pe[1])[0] + simple_synthesis(pe[2])[0],
+            )
+            for p, base, exp in pow_candidates:
                 k = abs(p - value)
                 if k <= max_ext * 2 and k not in disallowed:
                     cost_base, expr_base = solve(base, depth - 1)
@@ -218,43 +561,84 @@ def synthesize_optimal_with_exp(
                     total = cost_base + cost_exp + cost_pow + op_cost * (k != 0)
                     if total >= best_cost:
                         continue
-                    cost_k, expr_k = solve(k, depth - 1)
-                    total += cost_k * (k != 0)
-                    entry = ("pow", expr_base, expr_exp, None)
-                    if k != 0:
-                        entry = ("sub", entry, expr_k, None) if p > value else ("add", entry, expr_k, None)
-                    consider(total, entry)
+                    if k:
+                        cost_k, expr_k = solve(k, depth - 1)
+                        total += cost_k
+                    entry = BinOpNode("pow", expr_base, expr_exp)
+                    if k:
+                        entry = (
+                            BinOpNode("sub", entry, expr_k)
+                            if p > value
+                            else BinOpNode("add", entry, expr_k)
+                        )
+                    if total < best_cost - 1e-12:
+                        best_cost = total
+                        best_expr = entry
 
         if cost_mul < best_cost:
-            for a, b in divisor_pairs(value):
-                if a in disallowed or b in disallowed or a==1 or b==1: # useless values that leads to the same value
+            pairs = sorted(
+                divisor_pairs(value),
+                key=lambda ab: simple_synthesis(ab[0])[0] + simple_synthesis(ab[1])[0],
+            )
+            for a, b in pairs:
+                if a == 1 or b == 1:
                     continue
 
+                if simple_synthesis(a)[0] + cost_mul >= best_cost:
+                    continue
                 cost_a, expr_a = solve(a, depth - 1)
                 if cost_a + cost_mul >= best_cost:
                     continue
                 cost_b, expr_b = solve(b, depth - 1)
                 total = cost_a + cost_b + cost_mul
-                consider(total, ("mul", expr_a, expr_b, None))
+                if total < best_cost - 1e-12:
+                    best_cost = total
+                    best_expr = BinOpNode("mul", expr_a, expr_b)
 
         if cost_add < best_cost:
-            for a in candidate_add_splits(value, max_ext, base_powers):
+            splits = sorted(
+                candidate_add_splits(value, max_ext, base_powers),
+                key=lambda x: simple_synthesis(x)[0] + simple_synthesis(value - x)[0],
+            )
+            for a in splits:
                 b = value - a
-                if a in disallowed or b in disallowed or a == 0 or b == 0:
+                if a == 0 or b == 0:
                     continue
 
+                if simple_synthesis(a)[0] + cost_add >= best_cost:
+                    continue
                 cost_a, expr_a = solve(a, depth - 1)
                 if cost_a + cost_add < best_cost:
                     cost_b, expr_b = solve(b, depth - 1)
                     total = cost_a + cost_b + cost_add
-                    consider(total, ("add", expr_a, expr_b, None))
+                    if total < best_cost - 1e-12:
+                        best_cost = total
+                        best_expr = BinOpNode("add", expr_a, expr_b)
                 if cost_mul + cost_add < best_cost:
                     if a > 1 and b > 1:
-                        for f, g in divisor_pairs(math.gcd(a, b)):
-                            for factor in (f, g):
+                        g = gcd(a, b)
+                        if g <= 1:
+                            continue
+                        pairs = sorted(
+                            divisor_pairs(g),
+                            key=lambda ab: simple_synthesis(ab[0])[0]
+                            + simple_synthesis(ab[1])[0],
+                        )
+                        for f1, f2 in pairs:
+                            factors = (
+                                sorted({f1, f2}, key=lambda f: simple_synthesis(f)[0])
+                                if f1 != f2
+                                else (f1,)
+                            )
+                            for factor in factors:
                                 if factor <= 1:
                                     continue
 
+                                if (
+                                    simple_synthesis(factor)[0] + cost_mul + cost_add
+                                    >= best_cost
+                                ):
+                                    continue
                                 a2 = a // factor
                                 b2 = b // factor
                                 cost_f, expr_f = solve(factor, depth - 1)
@@ -264,109 +648,103 @@ def synthesize_optimal_with_exp(
                                 if cost_f + cost_a2 + cost_mul + cost_add >= best_cost:
                                     continue
                                 cost_b2, expr_b2 = solve(b2, depth - 1)
-                                total2 = cost_f + cost_a2 + cost_b2 + cost_mul + cost_add
-                                consider(
-                                    total2,
-                                    ("mul", expr_f, ("add", expr_a2, expr_b2, None), None),
+                                total2 = (
+                                    cost_f + cost_a2 + cost_b2 + cost_mul + cost_add
                                 )
+                                if total2 < best_cost - 1e-12:
+                                    best_cost = total2
+                                    best_expr = BinOpNode(
+                                        "mul",
+                                        expr_f,
+                                        BinOpNode("add", expr_a2, expr_b2),
+                                    )
 
-        return best_cost, best_expr
+        result = (best_cost, best_expr)
+        _solve_cache[value] = (result, depth)
+        return result
 
-    simple_synthesis.cache_clear()
-    solve.cache_clear()
     if verbose:
-        print("near_exact_powers:",near_exact_powers(target, max_ext, max_val))
-        print("candidate_add_splits:", candidate_add_splits(target,max_ext, base_powers))
-        cost, expr=simple_synthesis(target)
+        print("near_exact_powers:", near_exact_powers(target, max_ext, max_val))
+        print(
+            "candidate_add_splits:", candidate_add_splits(target, max_ext, base_powers)
+        )
+        cost, expr = simple_synthesis(target)
         print("simple_synthesis:", (cost, render(expr) if expr else None))
     cost, expr_tree = solve(target, depth_limit)
 
     if verbose:
-        print(f"nodes: {nodes}")
+        print(f"nodes: {nodes}, dp_hits: {dp_hits}")
     if expr_tree is not None:
         # Pipeline: tuple-based AST (expr_tree) -> string expression (render) -> simplified string (simplify_expr)
         expr = render(expr_tree)
-    else: expr = "None"
+    else:
+        expr = "None"
     return cost, expr
 
 
 def optimize_sum_with_U(target: list[int], U: int) -> str:
+    """
+    @brief API for bin_dump.pyw
+    @param target Binary dump of values, which is unused directly as compression
+    @param U max usable literal
+    """
     total_target = sum(target)
-    return simplify_expr(synthesize_optimal_with_exp(
-        total_target,
-        disallowed=set(),
-        max_ext=U,
-        max_val=(1 << 31) - 1,
-        verbose=False,
-    )[1])
+    return simplify_expr(
+        synthesize_optimal_with_exp(
+            total_target,
+            disallowed=set(),
+            max_ext=U,
+            max_val=(1 << 31) - 1,
+            verbose=False,
+        )[1]
+    )
 
 
 optimizations = [optimize_sum_with_U]
 
+_BIN_OPS = {
+    "add": int.__add__,
+    "sub": int.__sub__,
+    "mul": int.__mul__,
+    "pow": int.__pow__,
+}
+
 
 def render(n: Node) -> str:
-    if n[0] == "lit":
-        return str(n[3])
-
-    if n[0] == "powbase":
-        return f"{BASE}**{n[1]}"
-
-    if n[0] == "add":
-        assert isinstance(n[1], tuple)
-        assert isinstance(n[2], tuple)
-        return f"({render(n[1])}+{render(n[2])})"
-
-    if n[0] == "sub":
-        assert isinstance(n[1], tuple)
-        assert isinstance(n[2], tuple)
-        return f"({render(n[1])}-{render(n[2])})"
-
-    if n[0] == "mul":
-        assert isinstance(n[1], tuple)
-        assert isinstance(n[2], tuple)
-        return f"{render(n[1])}*{render(n[2])}"
-
-    if n[0] == "pow":
-        assert isinstance(n[1], tuple)
-        assert isinstance(n[2], tuple)
-        return f"{render(n[1])}**{render(n[2])}"
-
-    raise ValueError(n[0])
+    ops = {"add": "+", "sub": "-", "mul": "*", "pow": "**"}
+    match n:
+        case LitNode():
+            return str(n.value)
+        case PowBaseNode():
+            return f"({BASE}**{n.exponent})"
+        case BinOpNode(op=x):
+            return f"({render(n.left)}{ops[x]}{render(n.right)})"
+        case _:
+            raise ValueError(type(n).__name__)
 
 
-def evaluate_cost(expr: str) -> tuple[int, float]:
-    """Deterministic evaluator used for final verification/debug."""
-
-    def _eval(node: ast.AST) -> tuple[int, float]:
-        if isinstance(node, ast.BinOp):
-            lv, lc = _eval(node.left)
-            rv, rc = _eval(node.right)
-
-            if isinstance(node.op, ast.Add):
-                return lv + rv, lc + rc + COST["add"]
-            if isinstance(node.op, ast.Sub):
-                return lv - rv, lc + rc + COST["sub"]
-            if isinstance(node.op, ast.Mult):
-                return lv * rv, lc + rc + COST["mul"]
-            if isinstance(node.op, ast.Pow):
-                # Special-case BASE**n as powbase
-                if (
-                    isinstance(node.left, ast.Constant)
-                    and node.left.value == BASE
-                    and isinstance(node.right, ast.Constant)
-                    and isinstance(node.right.value, int)
-                ):
-                    return BASE**node.right.value, COST["powbase"]
-                return lv**rv, lc + rc + COST["pow"]
-            raise ValueError(f"Unsupported op: {type(node.op).__name__}\n{ast.dump(node, indent=2)}")
-
-        if isinstance(node, ast.Constant) and type(node.value) is int:
+def eval_node(node: Node) -> tuple[int, float]:
+    """Evaluate a Node expression, return (value, computed_cost)."""
+    match node:
+        case LitNode():
             return node.value, COST["lit"]
+        case PowBaseNode():
+            return BASE**node.exponent, COST["powbase"]
+        case BinOpNode(op=x):
+            lv, lc = eval_node(node.left)
+            rv, rc = eval_node(node.right)
+            return _BIN_OPS[x](lv, rv), lc + rc + COST[x]
+        case _:
+            raise ValueError(f"Unknown node: {node}")
 
-        raise ValueError("Unsupported AST node")
 
-    t = ast.parse(expr, mode="eval")
-    return _eval(t.body)
+def evaluate_cost(expr: str | Node) -> tuple[int, float]:
+    """Deterministic evaluator used for final verification/debug."""
+    if isinstance(expr, str):
+        node = parse_expr(expr)
+    else:
+        node = expr
+    return eval_node(node)
 
 
 @cache
@@ -385,25 +763,31 @@ def is_power(n, base):
 
 # Precompute exact powers once. This is the big win.
 _MAX_PRECOMP_VAL = (1 << 31) - 1
-_MAX_BASE_EXP = int(math.log(_MAX_PRECOMP_VAL, BASE))
-_BASE_POWERS_ALL = [
-    BASE**e for e in range(1, _MAX_BASE_EXP + 1) if BASE**e <= _MAX_PRECOMP_VAL
-]
+_MAX_BASE_EXP = int(log(_MAX_PRECOMP_VAL, BASE))
+_BASE_POWERS_ALL = []
+v = BASE
+for _ in range(1, _MAX_BASE_EXP + 1):
+    if v > _MAX_PRECOMP_VAL:
+        break
+    _BASE_POWERS_ALL.append(v)
+    v *= BASE
 
-_EXACT_POWER_MAP: dict[int, list[tuple[int, int]]] = {}
+_BASE_POWERS = tuple(_BASE_POWERS_ALL)
+
 _EXACT_POWER_LIST: list[tuple[int, int, int]] = []  # (value, base, exp)
 
-for b in range(2, math.isqrt(_MAX_PRECOMP_VAL) + 1):
+for b in range(2, isqrt(_MAX_PRECOMP_VAL) + 1):
     p = b * b
     e = 2
     while p <= _MAX_PRECOMP_VAL:
-        _EXACT_POWER_MAP.setdefault(p, []).append((b, e))
         _EXACT_POWER_LIST.append((p, b, e))
         e += 1
         p *= b
 
 _EXACT_POWER_LIST.sort(key=lambda t: t[0])
 _EXACT_POWER_VALUES = [x[0] for x in _EXACT_POWER_LIST]
+
+
 def build_balanced(nodes: list) -> Node | None:
     n = len(nodes)
 
@@ -419,7 +803,7 @@ def build_balanced(nodes: list) -> Node | None:
             read += 1
 
             if read < n:
-                nodes[write] = ("add", left, nodes[read], None)
+                nodes[write] = BinOpNode("add", left, nodes[read])
                 read += 1
             else:
                 nodes[write] = left
@@ -429,97 +813,112 @@ def build_balanced(nodes: list) -> Node | None:
         n = write
 
     return nodes[0]
-class Simplifier(ast.NodeTransformer):
-    def visit_BinOp(self, node: ast.BinOp) -> ast.AST:
-        # First recurse properly
-        new_node = self.generic_visit(node)
 
-        # ---- fold_pow ----
-        if isinstance(new_node, ast.BinOp) and isinstance(new_node.op, ast.Pow):
+
+def _simplify_tree(node: Node) -> Node:
+    match node:
+        case PowBaseNode():
+            return LitNode(BASE**node.exponent)
+
+        case BinOpNode(op="pow"):
+            left = _simplify_tree(node.left)
+            right = _simplify_tree(node.right)
             if (
-                isinstance(new_node.left, ast.Constant)
-                and new_node.left.value == BASE
-                and isinstance(new_node.right, ast.Constant)
-                and isinstance(new_node.right.value, int)
-                and isinstance(new_node.left.value, int)
+                isinstance(left, LitNode)
+                and left.value == BASE
+                and isinstance(right, LitNode)
             ):
-                return ast.Constant(value=new_node.left.value ** new_node.right.value)
+                return LitNode(BASE**right.value)
+            if isinstance(left, LitNode) and isinstance(right, LitNode):
+                try:
+                    return LitNode(left.value**right.value)
+                except (OverflowError, ValueError):
+                    pass
+            return BinOpNode("pow", left, right)
 
-        return new_node
+        case BinOpNode(op="add"):
+            left = _simplify_tree(node.left)
+            right = _simplify_tree(node.right)
+            terms: list[Node] = []
 
+            def collect(n: Node) -> None:
+                if isinstance(n, BinOpNode) and n.op == "add":
+                    collect(n.left)
+                    collect(n.right)
+                else:
+                    terms.append(n)
 
-class AddFlattener(ast.NodeTransformer):
-    def visit_BinOp(self, node: ast.BinOp):
-        node = self.generic_visit(node)
+            collect(BinOpNode("add", left, right))
+            seen: set[str] = set()
+            uniq: list[Node] = []
+            for t in terms:
+                s = render(t)
+                if s not in seen:
+                    seen.add(s)
+                    uniq.append(t)
+            if len(uniq) == 1:
+                return uniq[0]
+            result = uniq[0]
+            for t in uniq[1:]:
+                result = BinOpNode("add", result, t)
+            return result
 
-        if not isinstance(node.op, ast.Add):
+        case BinOpNode(op=("sub" | "mul") as op):
+            left = _simplify_tree(node.left)
+            right = _simplify_tree(node.right)
+            return BinOpNode(op, left, right)
+
+        case _:
             return node
 
-        terms = []
 
-        def collect(n):
-            if isinstance(n, ast.BinOp) and isinstance(n.op, ast.Add):
-                collect(n.left)
-                collect(n.right)
-            else:
-                terms.append(n)
+def simplify_expr(expr: str | Node) -> str:
+    """Simplify expression: fold powbase/pow to lit, flatten adds, deduplicate terms."""
+    if isinstance(expr, str):
+        node = parse_expr(expr)
+    else:
+        node = expr
+    return render(_simplify_tree(node))
 
-        collect(node)
-
-        expr = terms[0]
-        for term in terms[1:]:
-            expr = ast.BinOp(left=expr, op=ast.Add(), right=term)
-
-        return expr
-
-
-class ExpressionSimplifier:
-    def __init__(self):
-        self.transformer = Simplifier()
-        self.flattener = AddFlattener()
-
-    def simplify(self, expr_str: str) -> str:
-        tree = ast.parse(expr_str, mode="eval")
-
-        tree = self.transformer.visit(tree)
-        tree = self.flattener.visit(tree)
-
-        ast.fix_missing_locations(tree)
-
-        return ast.unparse(tree)
 
 @cache
 def divisor_pairs(n: int):
-    out = [(1,n)]
-    for a in range(2, math.isqrt(n) + 1):
+    out = []
+    for a in range(2, isqrt(n) + 1):
         if n % a == 0:
             out.append((a, n // a))
     return tuple(out)
 
-@cache
-def near_exact_powers(value: int, max_ext: int, max_val:int) -> tuple[tuple[int, int, int], ...]:
-    r = max_ext
-    lo = max(0, value - r)
-    hi = min(max_val, value + r)
-    left = bisect.bisect_left(_EXACT_POWER_VALUES, lo)
-    right = bisect.bisect_right(_EXACT_POWER_VALUES, hi)
-    return tuple(_EXACT_POWER_LIST[left:right])
 
 @cache
-def candidate_add_splits(value: int, max_ext: int, base_powers:tuple[int]) -> tuple[int, ...]:
+def near_exact_powers(
+    value: int, max_ext: int, max_val: int
+) -> tuple[tuple[int, int, int], ...]:
+    r = max_ext * 2
+    lo = max(0, value - r)
+    hi = min(max_val, value + r)
+    left = bisect_left(_EXACT_POWER_VALUES, lo)
+    right = bisect_right(_EXACT_POWER_VALUES, hi)
+    return tuple(_EXACT_POWER_LIST[left:right])
+
+
+@cache
+def candidate_add_splits(
+    value: int, max_ext: int, base_powers: tuple[int]
+) -> tuple[int, ...]:
     if value <= 1:
         return tuple()
     cand = set()
-    max_test = max(max_ext, 32)*2
+    max_test = max(max_ext, 32) * 2
 
     for x in range(1, max_test + 1):
         if x <= value:
             cand.add(x)
             cand.add(value - x)
 
-    idx = bisect.bisect_left(base_powers, value)
-    for i_ in range(-5,+2):
-        i=idx+i_
+    idx = bisect_left(base_powers, value)
+    for i_ in range(-5, +2):
+        i = idx + i_
         if 0 <= i < len(base_powers):
             p = base_powers[i]
             if p <= value:
@@ -543,15 +942,129 @@ def candidate_add_splits(value: int, max_ext: int, base_powers:tuple[int]) -> tu
             if 1 < x < value:
                 cand.add(x)
 
-    return tuple(sorted(cand))
-simplify_expr=ExpressionSimplifier().simplify
+    return tuple(sorted(cand, key=lambda x: abs(x - value / 2)))
+
+
+# simplify_expr is defined above; the old ExpressionSimplifier wrapper is removed
 
 if __name__ == "__main__":
-    import random
+
+    # ======================================================
+    # Benchmark / regression configuration
+    # ======================================================
+
+    TRACKING_CONFIG = {
+        "BASE": BASE,
+        "COST": COST,
+    }
+
+    CONFIG_KEY = hashlib.sha256(
+        json.dumps(
+            TRACKING_CONFIG,
+            sort_keys=True,
+        ).encode()
+    ).hexdigest()[:16]
+
+    # ======================================================
+    # Persistent regression DB
+    # ======================================================
+
+    DB_PATH = Path("known_best.json")
+
+    try:
+        with open(DB_PATH, "r") as f:
+            REGRESSION_DB = json.load(f)
+    except FileNotFoundError:
+        REGRESSION_DB = {}
+
+    PROFILE = REGRESSION_DB.setdefault(
+        CONFIG_KEY,
+        {
+            "meta": TRACKING_CONFIG,
+            "results": {},
+        },
+    )
+
+    RESULTS = PROFILE["results"]
+
+    # ======================================================
+    # Helpers
+    # ======================================================
+
     def random_tc():
-        return random.randrange(1,math.isqrt(2**31-1)), set(), 26
-    print(random_tc())
-    import time
+        return (
+            random.randrange(1, isqrt(2**31 - 1)),
+            set(),
+            26,
+        )
+
+    def update_regression_db(
+        target: int,
+        actual_cost: float,
+        expr: str,
+    ):
+        key = str(target)
+
+        simplified = simplify_expr(expr)
+
+        prev = RESULTS.get(key)
+
+        # ----------------------------------------------
+        # New benchmark entry
+        # ----------------------------------------------
+
+        if prev is None:
+            RESULTS[key] = {
+                "cost": actual_cost,
+                "expr": simplified,
+            }
+
+            print("  ★ New benchmark entry recorded")
+            return
+
+        prev_cost = prev["cost"]
+
+        # ----------------------------------------------
+        # Better result
+        # ----------------------------------------------
+
+        if actual_cost < prev_cost - 1e-12:
+            print("\033[32m  ★ NEW BEST FOUND")
+
+            RESULTS[key] = {
+                "cost": actual_cost,
+                "expr": simplified,
+            }
+
+            print(f"    old cost: {prev_cost:.12f}")
+            print(f"    new cost: {actual_cost:.12f}\033[0m")
+
+            return
+
+        # ----------------------------------------------
+        # Regression
+        # ----------------------------------------------
+
+        if actual_cost > prev_cost + 1e-12:
+            print("\033[31m  ✗ REGRESSION DETECTED")
+
+            print(f"    expected <= {prev_cost:.12f}")
+            print(f"    got         {actual_cost:.12f}")
+
+            print(f"    previous expr: {prev['expr']}\033[0m")
+
+            return
+
+        # ----------------------------------------------
+        # Equal
+        # ----------------------------------------------
+
+        print("\033[32m  = Matches known best\033[0m")
+
+    # ======================================================
+    # Test cases
+    # ======================================================
+
     test_cases = [
         (3862631, set(), 27),
         (56, set(), 26),
@@ -563,18 +1076,18 @@ if __name__ == "__main__":
         (319216, set(), 26),
         (2**28 + 2**29, set(), 27),
         (26407, set(), 26),
-        (1073741824, set(), 26),  # 2^30
-        (1073741825, set(), 26),  # 2^30 + 1
-        (2147483647, set(), 26),  # 2^31 - 1
-        (1048575, set(), 26),  # 2^20 - 1
-        (654321, set(), 26),  # Has contiguous sequences
-        (999999, set(), 26),  # Another test
+        (1073741824, set(), 26),
+        (1073741825, set(), 26),
+        (2147483647, set(), 26),
+        (1048575, set(), 26),
+        (654321, set(), 26),
+        (999999, set(), 26),
         (4953, {10}, 26),
         (4983, {10}, 26),
-        (36, set(), 26),  # 6**2
-        (64, set(), 26),  # 4**3 or 8**2
-        (125, set(), 26),  # 5**3
-        (216, set(), 26),  # 6**3
+        (36, set(), 26),
+        (64, set(), 26),
+        (125, set(), 26),
+        (216, set(), 26),
         (6896, set(), 26),
         (3955, set(), 26),
         (166375, set(), 55),
@@ -585,60 +1098,106 @@ if __name__ == "__main__":
         (295052544, set(), 27),
     ]
 
+    # ======================================================
+    # Benchmark run
+    # ======================================================
+
     print("Testing synthesis with exponentiation patterns...")
-    print("=" * 60)
-    print(f"BASE: {BASE}")
-    print(f"Cost configuration: {COST}")
+    print("=" * 70)
+
+    print(f"\033[33mBASE: {BASE}")
+    print(f"Config profile: {CONFIG_KEY}")
+
+    print("Tracking config:")
+    pprint.pp(TRACKING_CONFIG)
+    print("\033[0m")
+    total_start = time.time()
 
     for target, disallowed, max_ext in test_cases:
-        print(f"\nTarget: {target}")
+
+        print("\n" + "=" * 70)
+        print(f"Target: {target}")
+
         if disallowed:
-            print(f"Disallowed: {disallowed}")
+            print(f"Disallowed literals: {sorted(disallowed)}")
 
         start = time.time()
+
         cost, expr = synthesize_optimal_with_exp(
             target,
             disallowed=disallowed,
             max_ext=max_ext,
-            max_val=2**31-1,
-            verbose=True,
+            max_val=2**31 - 1,
+            verbose=False,
         )
+
         elapsed = time.time() - start
 
-        print(f"  Time: {elapsed:.6f}s")
-        print(f"  Cost: {cost:.2f}")
-        print(f"  Expression: {expr} (simplified: {simplify_expr(expr)})")
+        print(f"  Time       : {elapsed:.6f}s")
+        print(f"  Cost       : {cost:.12f}")
+        print(f"  Expression : {expr}")
 
-        # Verify
+        simplified = simplify_expr(expr)
+
+        if simplified != expr:
+            print(f"  Simplified : {simplified}")
+
+        # ==================================================
+        # Verification
+        # ==================================================
+
         actual_value, actual_cost = evaluate_cost(expr)
 
-        # Display alternatives
-        def alt(equation: str):
-            assert evaluate_cost(equation)[0] == target
-            print(
-                f"  Alternative: {equation} = cost {evaluate_cost(equation)[1]:.3f}"
-            )
+        if actual_value != target:
+            print("\033[31m  ✗ WRONG VALUE")
+            print(f"    expected: {target}")
+            print(f"    got     : {actual_value}\033[0m")
+            continue
 
-        if actual_value == target:
-            if actual_cost != cost:
-                print(f"  ✗ Wrong cost (actual cost: {actual_cost:.2f}")
-            else: 
-                print(f"  ✓ Verified (actual cost: {actual_cost:.2f})")
+        if abs(actual_cost - cost) > 1e-12:
+            print("\033[31m  ✗ WRONG COST")
+            print(f"    reported: {cost:.12f}")
+            print(f"    actual  : {actual_cost:.12f}\033[0m")
+            continue
 
-            # Show alternative possibilities for comparison
-            match target:
-                case 319216:
-                    alt("2**16 + 15 * (16 + 2**9 + 2**14)")
-                case 6896:
-                    alt("(2**6 + 19) ** 2 + 7")
-                case 3955:
-                    alt("5 * (2**8 + 2**9 + 23)")
-                case 1368794382:
-                    alt("2**28 + (2**10 + 15) * (25 * 2**10 + 18) + 2**30")
-                    alt("14 + (14 + 2**4 + 2**10)*6**7 + 2**30")
-                case 654321:
-                    alt("3*(2**13+2**15+3**11)")
-                case 989:
-                    alt("2 ** 10 - (2**5 + 3)")
-        else:
-            print(f"  ✗ Wrong value: {actual_value} != {target}")
+        print("\033[32m  ✓ Verified\033[0m")
+
+        # ==================================================
+        # Regression tracking
+        # ==================================================
+
+        update_regression_db(
+            target,
+            actual_cost,
+            expr,
+        )
+
+    total_elapsed = time.time() - total_start
+
+    # ======================================================
+    # Save DB
+    # ======================================================
+
+    with open(DB_PATH, "w") as f:
+        json.dump(
+            REGRESSION_DB,
+            f,
+            indent=2,
+            sort_keys=True,
+        )
+
+    # ======================================================
+    # Summary
+    # ======================================================
+
+    print("\n" + "=" * 70)
+    print("Benchmark suite complete")
+
+    print(f"Total time: {total_elapsed:.6f}s")
+
+    print(f"Regression DB saved to: {DB_PATH}")
+    print(f"Config profile: {CONFIG_KEY}")
+
+    print("\nKnown best results for this profile:")
+
+    pprint.pp(RESULTS)
