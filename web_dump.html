@@ -1,0 +1,1510 @@
+<!-- written by https://www.reddit.com/r/beltmatic/comments/1t0wbpb/comment/ok1413d/?utm_source=share&utm_medium=web3x&utm_name=web3xcss&utm_term=1&utm_content=share_button -->
+<!-- modified by winapiadmin -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BELTMATIC // SEQUENCE OPTIMIZER</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=VT323&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+      :root {
+      --bg: #0d1014;
+      --bg-elev: #14181f;
+      --bg-panel: #181d26;
+      --line: #2a3140;
+      --line-soft: #1f2530;
+      --text: #d8dde3;
+      --text-dim: #7a8696;
+      --text-faint: #4a5462;
+      --amber: #ffa024;
+      --amber-soft: rgba(255, 160, 36, 0.12);
+      --cyan: #5dd6ff;
+      --cyan-soft: rgba(93, 214, 255, 0.10);
+      --green: #7fda6e;
+      --red: #ff5e5e;
+      --magenta: #d97aff;
+      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 14px; line-height: 1.5; min-height: 100vh; }
+      body {
+      background-image:
+      linear-gradient(var(--line-soft) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
+      background-size: 32px 32px;
+      background-position: -1px -1px;
+      }
+      ::selection { background: var(--amber); color: var(--bg); }
+      /* HEADER */
+      header {
+      border-bottom: 2px solid var(--line);
+      background: var(--bg-elev);
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      flex-wrap: wrap;
+      }
+      header .brand { display: flex; align-items: baseline; gap: 14px; }
+      header h1 {
+      font-family: 'VT323', monospace;
+      font-size: 38px;
+      color: var(--amber);
+      letter-spacing: 1px;
+      line-height: 1;
+      text-shadow: 0 0 12px rgba(255, 160, 36, 0.35);
+      }
+      header h1 .slash { color: var(--text-faint); }
+      header .tag {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      }
+      header .status { display: flex; gap: 16px; align-items: center; font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1.5px; }
+      header .status .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      display: inline-block;
+      margin-right: 6px;
+      box-shadow: 0 0 8px var(--green);
+      }
+      /* ready */
+      header .status .dot.active {
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green);
+      }
+      /* computation in progress */
+      header .status .dot.off {
+      background: #666;
+      box-shadow: none;
+      }
+      @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+      /* LAYOUT */
+      main { display: grid; grid-template-columns: 360px 1fr; gap: 0; min-height: calc(100vh - 60px); }
+      @media (max-width: 880px) { main { grid-template-columns: 1fr; } }
+      .col-input { border-right: 2px solid var(--line); background: rgba(13, 16, 20, 0.85); padding: 24px 20px; }
+      .col-output { padding: 24px 24px 60px; }
+      /* PANEL */
+      .panel { background: var(--bg-panel); border: 1px solid var(--line); margin-bottom: 18px; }
+      .panel-header { padding: 8px 14px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; background: var(--bg-elev); }
+      .panel-title { font-family: 'VT323', monospace; font-size: 18px; color: var(--cyan); letter-spacing: 2px; line-height: 1; }
+      .panel-title.amber { color: var(--amber); }
+      .panel-title.magenta { color: var(--magenta); }
+      .panel-meta { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 1.5px; }
+      .panel-body { padding: 16px 14px; }
+      /* INPUT FIELDS */
+      .field { margin-bottom: 18px; }
+      .field label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: var(--text-dim); margin-bottom: 6px; }
+      .field label .req { color: var(--amber); }
+      .field label .hint { color: var(--text-faint); text-transform: none; letter-spacing: 0; font-size: 11px; margin-left: 6px; }
+      .field input, .field select {
+      width: 100%; padding: 10px 12px; background: var(--bg); color: var(--text); border: 1px solid var(--line);
+      font-family: 'JetBrains Mono', monospace; font-size: 14px; outline: none;
+      }
+      .field input:focus, .field select:focus { border-color: var(--amber); box-shadow: 0 0 0 1px var(--amber); }
+      .field input::placeholder { color: var(--text-faint); }
+      .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      /* BUTTONS */
+      button.run {
+      width: 100%; padding: 14px 16px; background: var(--amber); color: var(--bg); border: none;
+      font-family: 'VT323', monospace; font-size: 22px; letter-spacing: 4px; cursor: pointer;
+      transition: all 0.15s; text-transform: uppercase;
+      }
+      button.run:hover { background: #ffb648; box-shadow: 0 0 24px rgba(255, 160, 36, 0.5); }
+      button.run:active { transform: translateY(1px); }
+      button.run:disabled { background: var(--line); color: var(--text-faint); cursor: not-allowed; box-shadow: none; }
+      button.ghost {
+      background: transparent; color: var(--cyan); border: 1px solid var(--cyan); padding: 6px 12px;
+      font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; cursor: pointer; transition: all 0.15s;
+      }
+      button.ghost:hover { background: var(--cyan-soft); }
+      /* PRESETS */
+      .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+      .preset {
+      padding: 4px 8px; font-size: 11px; background: transparent; border: 1px solid var(--line);
+      color: var(--text-dim); cursor: pointer; font-family: inherit; transition: all 0.1s;
+      }
+      .preset:hover { border-color: var(--amber); color: var(--amber); }
+      /* BIT BREAKDOWN */
+      .bits-grid { display: grid; grid-template-columns: repeat(32, 1fr); gap: 2px; margin-bottom: 12px; }
+      @media (max-width: 700px) { .bits-grid { grid-template-columns: repeat(16, 1fr); } }
+      .bit {
+      aspect-ratio: 1;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; color: var(--text-faint);
+      transition: all 0.2s;
+      }
+      .bit.set { background: var(--amber); color: var(--bg); border-color: var(--amber); box-shadow: 0 0 8px rgba(255, 160, 36, 0.4); }
+      .bit-labels { display: grid; grid-template-columns: repeat(32, 1fr); gap: 2px; margin-bottom: 4px; }
+      @media (max-width: 700px) { .bit-labels { grid-template-columns: repeat(16, 1fr); } }
+      .bit-label { font-size: 9px; color: var(--text-faint); text-align: center; line-height: 1; }
+      .bit-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+      .bit-chip {
+      padding: 4px 8px; background: var(--amber-soft); border: 1px solid var(--amber);
+      color: var(--amber); font-size: 12px; line-height: 1;
+      }
+      /* EXPRESSION */
+      .expr-wrap { position: relative; }
+      .expr {
+      background: var(--bg); border: 1px solid var(--line); padding: 16px;
+      font-family: 'JetBrains Mono', monospace; font-size: 15px; color: var(--cyan);
+      word-break: break-all; line-height: 1.7;
+      max-height: 280px; overflow: auto;
+      }
+      .expr .num { color: var(--text); }
+      .expr .op { color: var(--text-dim); }
+      .expr .pow { color: var(--magenta); }
+      .copy-btn { position: absolute; top: 6px; right: 6px; }
+      /* STATS GRID */
+      .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1px; background: var(--line); }
+      .stat { background: var(--bg-panel); padding: 14px; }
+      .stat-label { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 6px; }
+      .stat-value { font-family: 'VT323', monospace; font-size: 28px; color: var(--text); line-height: 1; }
+      .stat-value.amber { color: var(--amber); }
+      .stat-value.cyan { color: var(--cyan); }
+      .stat-value.green { color: var(--green); }
+      .stat-value.red { color: var(--red); }
+      /* STEPS */
+      .steps { display: flex; flex-direction: column; gap: 4px; }
+      .step {
+      display: grid; grid-template-columns: 30px 1fr; gap: 12px; padding: 8px 12px; background: var(--bg);
+      border-left: 2px solid var(--line); font-size: 13px; align-items: center;
+      }
+      .step:hover { background: var(--bg-elev); border-left-color: var(--amber); }
+      .step-idx { color: var(--text-faint); font-size: 11px; }
+      .step-expr { color: var(--text); }
+      .step-eq { color: var(--text-dim); }
+      .step-val { color: var(--cyan); font-weight: 500; }
+      .step.literal { border-left-color: var(--green); }
+      .step.literal .step-val { color: var(--green); }
+      .step.power { border-left-color: var(--magenta); }
+      .step.power .step-val { color: var(--magenta); }
+      /* MESSAGES */
+      .empty { color: var(--text-faint); text-align: center; padding: 40px 20px; font-size: 12px; text-transform: uppercase; letter-spacing: 2px; }
+      .computing { color: var(--amber); text-align: center; padding: 40px 20px; font-size: 14px; }
+      .computing::after { content: '_'; animation: blink-cursor 1s infinite; }
+      @keyframes blink-cursor { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
+      .error { color: var(--red); padding: 14px; background: rgba(255, 94, 94, 0.08); border: 1px solid var(--red); }
+      /* INFO */
+      .info-block { font-size: 12px; color: var(--text-dim); line-height: 1.7; }
+      .info-block code { background: var(--bg); padding: 1px 6px; color: var(--amber); border: 1px solid var(--line-soft); }
+      .info-block strong { color: var(--text); }
+      /* COST TABLE */
+      .cost-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+      .cost-table td { padding: 5px 8px; border-bottom: 1px solid var(--line-soft); }
+      .cost-table td:first-child { color: var(--cyan); font-weight: 500; }
+      .cost-table td:last-child { color: var(--amber); text-align: right; font-variant-numeric: tabular-nums; }
+      .cost-table input[type="number"] {
+      width: 70px;
+      padding: 4px 6px;
+      border: 1px solid #aaa;
+      border-radius: 4px;
+      font: inherit;
+      background: #fff;
+      color: #111;
+      }
+      .cost-table input[type="number"]:focus {
+      outline: none;
+      border-color: #4a90e2;
+      box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
+      }
+      @media (prefers-color-scheme: dark) {
+      .cost-table td {
+      border-color: #444;
+      }
+      .cost-table input[type="number"] {
+      background: #1e1e1e;
+      color: #eee;
+      border-color: #555;
+      }
+      .cost-table input[type="number"]:focus {
+      border-color: #6aa9ff;
+      box-shadow: 0 0 0 2px rgba(106, 169, 255, 0.25);
+      }
+      }
+      footer { padding: 14px 20px; border-top: 2px solid var(--line); text-align: center; font-size: 11px; color: var(--text-faint); letter-spacing: 1.5px; text-transform: uppercase; }
+      footer a { color: var(--text-dim); text-decoration: none; border-bottom: 1px dotted var(--text-faint); }
+      footer a:hover { color: var(--amber); border-bottom-color: var(--amber); }
+      /* SCROLLBAR */
+      ::-webkit-scrollbar { width: 8px; height: 8px; }
+      ::-webkit-scrollbar-track { background: var(--bg); }
+      ::-webkit-scrollbar-thumb { background: var(--line); }
+      ::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+    </style>
+    <!-- <script defer data-domain="marginalia.tiiny.site" src="https://analytics.tiiny.site/js/plausible.js"></script><script type="text/javascript" src="https://tiiny.host/ad-script.js"></script> -->
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <h1>BELTMATIC<span class="slash">//</span>OPT</h1>
+        <span class="tag">Sequence Synthesis Terminal</span>
+      </div>
+      <div class="status"><span><span class="dot"></span>READY</span><span id="enginestat">ENGINE: COST-OPT</span></div>
+    </header>
+    <main>
+      <!-- INPUTS -->
+      <div class="col-input">
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-title amber">// PARAMETERS</span>
+            <span class="panel-meta">INPUT</span>
+          </div>
+          <div class="panel-body">
+            <div class="field">
+              <label>Target value <span class="req">*</span></label>
+              <input id="target" type="text" inputmode="numeric" value="999999" autocomplete="off">
+              <div class="presets">
+                <button class="preset" data-target="56">56</button>
+                <button class="preset" data-target="989">989</button>
+                <button class="preset" data-target="22899">22899</button>
+                <button class="preset" data-target="319216">319216</button>
+                <button class="preset" data-target="999999">999999</button>
+                <button class="preset" data-target="1073741824">2³⁰</button>
+                <button class="preset" data-target="2147483647">2³¹−1</button>
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label>Max ext. (U) <span class="hint">≤ this is free</span></label>
+                <input id="maxExt" type="number" value="26" min="1" max="200">
+              </div>
+              <div class="field">
+                <label>Engine</label>
+                <select id="engine">
+                  <option value="cost">Cost-optimal</option>
+                  <option value="bfs">BFS step-min</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <label>Disallowed values <span class="hint">comma-separated</span></label>
+              <input id="disallowed" type="text" placeholder="e.g. 10, 17" autocomplete="off">
+            </div>
+            <div class="field" id="bfsOpsField" style="display:none;">
+              <label>BFS operators</label>
+              <select id="bfsOps">
+                <option value="+,-,*,/">+ − × ÷</option>
+                <option value="+,-,*">+ − ×</option>
+                <option value="+,*">+ ×</option>
+                <option value="+,*,/">+ × ÷</option>
+              </select>
+            </div>
+            <button class="run" id="runBtn">RUN OPTIMIZER</button>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-title">// COST MODEL</span>
+            <span class="panel-meta">REF</span>
+          </div>
+          <div class="panel-body">
+            <table class="cost-table">
+              <tr>
+                <td>literal ≤ U</td>
+                <td><input type="number" step="0.01" data-cost="lit"></td>
+              </tr>
+              <tr>
+                <td>2 ^ n (powbase)</td>
+                <td><input type="number" step="0.01" data-cost="powbase"></td>
+              </tr>
+              <tr>
+                <td>add</td>
+                <td><input type="number" step="0.01" data-cost="add"></td>
+              </tr>
+              <tr>
+                <td>sub</td>
+                <td><input type="number" step="0.01" data-cost="sub"></td>
+              </tr>
+              <tr>
+                <td>mul</td>
+                <td><input type="number" step="0.01" data-cost="mul"></td>
+              </tr>
+              <tr>
+                <td>pow (a^b)</td>
+                <td><input type="number" step="0.01" data-cost="pow"></td>
+              </tr>
+              <tr>
+                <td>div (a/b)</td>
+                <td><input type="number" step="0.01" data-cost="div"></td>
+              </tr>
+            </table>
+          </div>
+        </div>
+      </div>
+      <!-- OUTPUT -->
+      <div class="col-output">
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-title">// BIT DECOMPOSITION</span>
+            <span class="panel-meta" id="binMeta">DEC=0 / HEX=0x0</span>
+          </div>
+          <div class="panel-body" id="binPanel">
+            <div class="empty">// awaiting input</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-title amber">// SYNTHESIZED EXPRESSION</span>
+            <span class="panel-meta" id="exprMeta"></span>
+          </div>
+          <div class="panel-body">
+            <div id="exprPanel">
+              <div class="empty">// no result</div>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-title magenta">// METRICS</span>
+            <span class="panel-meta">BENCHMARK</span>
+          </div>
+          <div class="panel-body" style="padding:1px;">
+            <div class="stats" id="statsPanel">
+              <div class="stat">
+                <div class="stat-label">Cost</div>
+                <div class="stat-value amber">—</div>
+              </div>
+              <div class="stat">
+                <div class="stat-label">Verified</div>
+                <div class="stat-value">—</div>
+              </div>
+              <div class="stat">
+                <div class="stat-label">Search nodes</div>
+                <div class="stat-value cyan">—</div>
+              </div>
+              <div class="stat">
+                <div class="stat-label">Time</div>
+                <div class="stat-value">—</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-title">// BUILD STEPS</span>
+            <span class="panel-meta" id="stepsMeta"></span>
+          </div>
+          <div class="panel-body" id="stepsPanel">
+            <div class="empty">// no result</div>
+          </div>
+        </div>
+      </div>
+    </main>
+    <footer>
+      Port of <a href="https://github.com/winapiadmin/beltmatic_optimizer" target="_blank" rel="noopener">winapiadmin/beltmatic_optimizer</a> · static html · zero deps
+    </footer>
+    <script>
+      //============================================================================
+      //  ENGINE — port of optimization2.py + optimization.py
+      //============================================================================
+      "use strict";
+      
+      const BASE = 2;
+      const COST = { add: 0.5, sub: 1.0, mul: 1.0, div: 1.0, pow: 1.0 / 1.1, powbase: 0.0, lit: 0.0 };
+      const MAX_VAL = 2147483647; // 2^31 - 1
+      const MIN_VAL = -2147483648; // -(2^31)
+
+
+
+      const dot = document.querySelector('.dot');
+      dot.classList.remove('off');
+      dot.classList.add('active');
+      
+      //-------------- helpers --------------
+      function isPower(n, base) {
+        if (n < 1 || base < 2) return false;
+        if (base === 2) return (n & (n - 1)) === 0;
+        while (n % base === 0) n = n / base;
+        return n === 1;
+      }
+      // bit_length(n) - 1 for n a power of 2
+      function log2int(n) { return 31 - Math.clz32(n); }
+      
+      const _divisorPairsCache = new Map();
+      const _DIVISOR_PAIR_MAX_ITER = 2000;
+      function divisorPairs(n) {
+        if (_divisorPairsCache.has(n)) return _divisorPairsCache.get(n);
+        const out = [];
+        const sq = Math.floor(Math.sqrt(n));
+        const maxA = Math.min(sq, _DIVISOR_PAIR_MAX_ITER);
+        for (let a = 2; a <= maxA; a++) if (n % a === 0) out.push([a, n / a]);
+        _divisorPairsCache.set(n, out);
+        return out;
+      }
+      function gcd(a, b) { a = Math.abs(a); b = Math.abs(b); while (b) { const t = a % b; a = b; b = t; } return a; }
+      function bisectLeft(arr, x) { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >>> 1; if (arr[m] < x) lo = m + 1; else hi = m; } return lo; }
+      function bisectRight(arr, x) { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >>> 1; if (arr[m] <= x) lo = m + 1; else hi = m; } return lo; }
+      
+      //-------------- precompute exact powers (a^b) up to MAX_VAL --------------
+      const _EXACT_POWER_LIST = [];
+      (function precompute() {
+        const sqrtMax = Math.floor(Math.sqrt(MAX_VAL));
+        for (let b = 2; b <= sqrtMax; b++) {
+          let p = b * b;
+          let e = 2;
+          while (p <= MAX_VAL) {
+            _EXACT_POWER_LIST.push([p, b, e]);
+            e++;
+            p *= b;
+          }
+        }
+        _EXACT_POWER_LIST.sort((x, y) => x[0] - y[0]);
+      })();
+      const _EXACT_POWER_VALUES = _EXACT_POWER_LIST.map(t => t[0]);
+
+      //-------------- precompute base powers --------------
+      const _BASE_POWERS = [];
+      for (let v = BASE; v <= MAX_VAL; v *= BASE) _BASE_POWERS.push(v);
+      
+      //-------------- balanced add tree --------------
+      function buildBalanced(nodes) {
+        let n = nodes.length;
+        if (n === 0) return null;
+        while (n > 1) {
+          let write = 0;
+          let read = 0;
+          while (read < n) {
+            const left = nodes[read];
+            read++;
+            if (read < n) {
+              nodes[write] = ["add", left, nodes[read], null];
+              read++;
+            } else {
+              nodes[write] = left;
+            }
+            write++;
+          }
+          n = write;
+        }
+        return nodes[0];
+      }
+      
+      //============================================================================
+      //  BFS-on-cost optimal DP table (ported from optimization3.py)
+      //============================================================================
+      const _DP_LIMIT = 50000;
+      let _DP_COST = null;
+      let _DP_EXPR = null;
+      let _DP_MAX_LITERAL = null;
+      let _DP_MAX_VALUE = null;
+
+      class MinHeap {
+        constructor() { this._heap = []; }
+        get size() { return this._heap.length; }
+        push(key, val) {
+          this._heap.push([key, val]);
+          let i = this._heap.length - 1;
+          while (i > 0) {
+            const p = (i - 1) >> 1;
+            if (this._heap[p][0] <= this._heap[i][0]) break;
+            [this._heap[p], this._heap[i]] = [this._heap[i], this._heap[p]];
+            i = p;
+          }
+        }
+        pop() {
+          if (this._heap.length === 0) return null;
+          const top = this._heap[0];
+          const last = this._heap.pop();
+          if (this._heap.length > 0) {
+            this._heap[0] = last;
+            let i = 0, n = this._heap.length;
+            while (true) {
+              let smallest = i;
+              const l = (i << 1) + 1, r = (i << 1) + 2;
+              if (l < n && this._heap[l][0] < this._heap[smallest][0]) smallest = l;
+              if (r < n && this._heap[r][0] < this._heap[smallest][0]) smallest = r;
+              if (smallest === i) break;
+              [this._heap[smallest], this._heap[i]] = [this._heap[i], this._heap[smallest]];
+              i = smallest;
+            }
+          }
+          return top;
+        }
+      }
+
+      function ensureOptimalTable(maxLiteral, maxValue) {
+        if (_DP_COST !== null && _DP_MAX_LITERAL === maxLiteral && _DP_MAX_VALUE === maxValue) return;
+
+        const L = _DP_LIMIT;
+        const limit = Math.min(L, maxValue);
+        const INF = Infinity;
+        const costArr = new Array(L + 1);
+        const exprArr = new Array(L + 1);
+        const nearArr = new Array(L + 1);
+        for (let i = 0; i <= L; i++) { costArr[i] = INF; exprArr[i] = null; nearArr[i] = Infinity; }
+
+        const seeds = new Set();
+        for (let x = 0; x <= maxLiteral; x++) seeds.add(x);
+        let p = BASE;
+        while (p <= limit) { seeds.add(p); p *= BASE; }
+
+        for (const s of seeds) {
+          costArr[s] = 0;
+          nearArr[s] = 0;
+          if (s <= maxLiteral) {
+            exprArr[s] = ["lit", null, null, s];
+          } else {
+            let exp = 0; let tmp = s; while (tmp > 1) { tmp = Math.floor(tmp / BASE); exp++; }
+            exprArr[s] = ["powbase", exp, null, null];
+          }
+        }
+
+        const pq = new MinHeap();
+        for (const s of seeds) pq.push(0, s);
+
+        const seedList = Array.from(seeds).sort((a, b) => a - b);
+        const smallNonSeeds = [];
+
+        while (pq.size > 0) {
+          const [curCost, val] = pq.pop();
+          if (curCost > costArr[val]) continue;
+
+          for (const seed of seedList) {
+            const seedCost = costArr[seed];
+
+            // add
+            const addVal = val + seed;
+            if (addVal <= limit) {
+              const newCost = curCost + seedCost + COST.add;
+              const near = Math.abs(val - seed);
+              if (newCost < costArr[addVal] || (newCost === costArr[addVal] && near < nearArr[addVal])) {
+                costArr[addVal] = newCost;
+                nearArr[addVal] = near;
+                exprArr[addVal] = ["add", exprArr[val], exprArr[seed], null];
+                pq.push(newCost, addVal);
+              }
+            }
+
+            // sub: val - seed
+            if (val >= seed) {
+              const subVal = val - seed;
+              const newCost = curCost + seedCost + COST.sub;
+              const near = val - seed;
+              if (newCost < costArr[subVal] || (newCost === costArr[subVal] && near < nearArr[subVal])) {
+                costArr[subVal] = newCost;
+                nearArr[subVal] = near;
+                exprArr[subVal] = ["sub", exprArr[val], exprArr[seed], null];
+                pq.push(newCost, subVal);
+              }
+            }
+
+            // sub: seed - val
+            if (seed >= val) {
+              const subVal = seed - val;
+              const newCost = curCost + seedCost + COST.sub;
+              const near = seed - val;
+              if (newCost < costArr[subVal] || (newCost === costArr[subVal] && near < nearArr[subVal])) {
+                costArr[subVal] = newCost;
+                nearArr[subVal] = near;
+                exprArr[subVal] = ["sub", exprArr[seed], exprArr[val], null];
+                pq.push(newCost, subVal);
+              }
+            }
+
+            // mul
+            const mulVal = val * seed;
+            if (mulVal <= limit && mulVal !== 0) {
+              const newCost = curCost + seedCost + COST.mul;
+              const near = Math.abs(val - seed);
+              if (newCost < costArr[mulVal] || (newCost === costArr[mulVal] && near < nearArr[mulVal])) {
+                costArr[mulVal] = newCost;
+                nearArr[mulVal] = near;
+                exprArr[mulVal] = ["mul", exprArr[val], exprArr[seed], null];
+                pq.push(newCost, mulVal);
+              }
+            }
+          }
+
+          // pow: val ** seed
+          if (val >= 2) {
+            const bitLimit = log2int(limit) + 1;
+            for (const seed of seedList) {
+              if (seed >= 2 && seed <= 15) {
+                if (seed * (log2int(val) + 1) <= bitLimit) {
+                  const powVal = Math.pow(val, seed);
+                  if (powVal <= limit) {
+                    const newCost = curCost + costArr[seed] + COST.pow;
+                    const near = Math.abs(val - seed);
+                    if (newCost < costArr[powVal] || (newCost === costArr[powVal] && near < nearArr[powVal])) {
+                      exprArr[powVal] = ["pow", exprArr[val], exprArr[seed], null];
+                      nearArr[powVal] = near;
+                      costArr[powVal] = newCost;
+                      pq.push(newCost, powVal);
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          // pow: seed ** val
+          if (val >= 2 && val <= 15) {
+            const bitLimit = log2int(limit) + 1;
+            for (const seed of seedList) {
+              if (seed >= 2) {
+                if (val * (log2int(seed) + 1) <= bitLimit) {
+                  const powVal = Math.pow(seed, val);
+                  if (powVal <= limit) {
+                    const newCost = curCost + costArr[seed] + COST.pow;
+                    const near = Math.abs(seed - val);
+                    if (newCost < costArr[powVal] || (newCost === costArr[powVal] && near < nearArr[powVal])) {
+                      exprArr[powVal] = ["pow", exprArr[seed], exprArr[val], null];
+                      nearArr[powVal] = near;
+                      costArr[powVal] = newCost;
+                      pq.push(newCost, powVal);
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          // Non-seed × non-seed for small values
+          if (val < 200 && !seeds.has(val)) {
+            for (const other of smallNonSeeds) {
+              if (other === val) continue;
+              const mulVal2 = val * other;
+              if (mulVal2 <= limit) {
+                const newCost = curCost + costArr[other] + COST.mul;
+                const near = Math.abs(val - other);
+                if (newCost < costArr[mulVal2] || (newCost === costArr[mulVal2] && near < nearArr[mulVal2])) {
+                  exprArr[mulVal2] = ["mul", exprArr[val], exprArr[other], null];
+                  nearArr[mulVal2] = near;
+                  costArr[mulVal2] = newCost;
+                  pq.push(newCost, mulVal2);
+                }
+              }
+              const addVal2 = val + other;
+              if (addVal2 <= limit) {
+                const newCost = curCost + costArr[other] + COST.add;
+                const near = Math.abs(val - other);
+                if (newCost < costArr[addVal2] || (newCost === costArr[addVal2] && near < nearArr[addVal2])) {
+                  exprArr[addVal2] = ["add", exprArr[val], exprArr[other], null];
+                  nearArr[addVal2] = near;
+                  costArr[addVal2] = newCost;
+                  pq.push(newCost, addVal2);
+                }
+              }
+            }
+          }
+
+          if (!seeds.has(val) && val < 200) {
+            smallNonSeeds.push(val);
+          }
+        }
+
+        _DP_COST = costArr;
+        _DP_EXPR = exprArr;
+        _DP_MAX_LITERAL = maxLiteral;
+        _DP_MAX_VALUE = maxValue;
+      }
+
+      function optimalLookup(value) {
+        if (_DP_COST !== null && value <= _DP_LIMIT) {
+          const c = _DP_COST[value];
+          if (c !== Infinity) return [c, _DP_EXPR[value]];
+        }
+        return null;
+      }
+
+      //============================================================================
+      //  optimization2.py port: synthesize_optimal_with_exp
+      //============================================================================
+      function synthesize(target, opts = {}) {
+        const disallowed = new Set(opts.disallowed || []);
+        const maxExt = opts.maxExt ?? 26;
+        const maxVal = opts.maxVal ?? MAX_VAL;
+        const depthLimit = opts.depthLimit ?? 4;
+      
+        // Local base powers within maxVal
+        const basePowers = maxVal < MAX_VAL
+          ? _BASE_POWERS.slice(0, bisectRight(_BASE_POWERS, maxVal))
+          : _BASE_POWERS;
+      
+        let nodes = 0;
+        let dpHits = 0;
+        ensureOptimalTable(maxExt, maxVal);
+        const M2 = maxExt * 2;
+        const _maxBaseExp = maxVal < MAX_VAL ? log2int(maxVal) : _BASE_POWERS.length;
+        const simpleSynthCache = new Map();
+        const nearExactPowersCache = new Map();
+        const candidateAddSplitsCache = new Map();
+        const solveCache = new Map();
+      
+        function simpleSynthesis(value) {
+          if (simpleSynthCache.has(value)) return simpleSynthCache.get(value);
+          let result;
+      
+          if (value <= maxExt && !disallowed.has(value)) {
+            result = [COST.lit, ["lit", null, null, value]];
+            simpleSynthCache.set(value, result);
+            return result;
+          }
+          if (value > 0 && isPower(value, BASE)) {
+            let n = 0; let tmp = value; while (tmp > 1) { tmp = Math.floor(tmp / BASE); n++; }
+            result = [COST.powbase, ["powbase", n, null, null]];
+            simpleSynthCache.set(value, result);
+            return result;
+          }
+      
+          // Binary digit decomposition
+          const digits = []; // [(digit, power), ...]
+          let temp = value;
+          let power = 0;
+          while (temp > 0) {
+            if (temp & 1) digits.push([1, power]);
+            temp >>>= 1;
+            power++;
+          }
+          if (digits.length === 0) {
+            result = [COST.lit, ["lit", null, null, 0]];
+            simpleSynthCache.set(value, result);
+            return result;
+          }
+      
+          const parts = [];
+          let totalCost = 0;
+          let i = 0;
+          while (i < digits.length) {
+            const [, start] = digits[i];
+            let j = i;
+            while (j + 1 < digits.length && digits[j + 1][0] === 1 && digits[j + 1][1] === digits[j][1] + 1) j++;
+            const end = digits[j][1];
+            const length = end - start + 1;
+            if (length >= 3) {
+              const cost_uncompressed=length*COST.powbase + (length - 1) * COST.add;
+              const cost_compressed=COST.sub+2*COST.powbase;
+              const canCompress = BASE === 2 &&
+                  end + 1 <= _maxBaseExp &&
+                  cost_compressed <= cost_uncompressed;
+              if (!canCompress){
+                const streakParts = Array.from(
+                  { length },
+                  (_, i) => ["powbase", start + i, null, null]
+                );
+                parts.push(buildBalanced(streakParts));
+                totalCost += cost_uncompressed;
+              } else {
+                parts.push(["sub", ["powbase", end + 1, null, null], ["powbase", start, null, null], null]);
+                totalCost += cost_compressed;
+              }
+            } else {
+              for (let p = start; p <= end; p++) {
+                parts.push(["powbase", p, null, null]); totalCost += COST.powbase;
+              }
+            }
+            i = j + 1;
+          }
+          const expr = buildBalanced(parts);
+          if (parts.length > 1) totalCost += (parts.length - 1) * COST.add;
+          result = [totalCost, expr];
+          simpleSynthCache.set(value, result);
+          return result;
+        }
+      
+        function nearExactPowers(value) {
+          if (nearExactPowersCache.has(value)) return nearExactPowersCache.get(value);
+          const lo = Math.max(0, value - M2);
+          const hi = Math.min(maxVal, value + M2);
+          const left = bisectLeft(_EXACT_POWER_VALUES, lo);
+          const right = bisectRight(_EXACT_POWER_VALUES, hi);
+          const r = _EXACT_POWER_LIST.slice(left, right);
+          nearExactPowersCache.set(value, r);
+          return r;
+        }
+      
+        function candidateAddSplits(value) {
+          if (candidateAddSplitsCache.has(value)) return candidateAddSplitsCache.get(value);
+          if (value <= 1) { return []; }
+          const cand = new Set();
+          const maxTest = Math.max(maxExt, 32) * 2;
+          for (let x = 1; x <= maxTest; x++) if (x <= value) { cand.add(x); cand.add(value - x); }
+          const idx = bisectLeft(basePowers, value);
+          for (let di = -5; di <= 1; di++) {
+            const i = idx + di;
+            if (i >= 0 && i < basePowers.length) {
+              const p = basePowers[i];
+              if (p < value) { cand.add(p); cand.add(value - p); }
+            }
+          }
+          for (let i = Math.max(0, idx - 2); i < Math.min(basePowers.length, idx + 3); i++) {
+            const p = basePowers[i];
+            if (p <= 1) continue;
+            const maxK = Math.min(32, Math.floor((value - 1) / p));
+            for (let k = 2; k <= maxK; k++) {
+              const x = k * p;
+              if (x < value) { cand.add(x); cand.add(value - x); }
+            }
+          }
+          const half = Math.floor(value / 2);
+          for (const delta of [0, 1, 2, 3, 5, 8, 13]) {
+            const x1 = half - delta, x2 = half + delta;
+            if (x1 > 1 && x1 < value) cand.add(x1);
+            if (x2 > 1 && x2 < value) cand.add(x2);
+          }
+          const r = Array.from(cand).sort((a, b) => Math.abs(a - half) - Math.abs(b - half));
+          candidateAddSplitsCache.set(value, r);
+          return r;
+        }
+
+        function solve(value, depth) {
+          const cached = solveCache.get(value);
+          if (cached && cached.d >= depth) return [cached.c, cached.e];
+          if (disallowed.size === 0) {
+            const dpResult = optimalLookup(value);
+            if (dpResult !== null) {
+              dpHits++;
+              solveCache.set(value, { c: dpResult[0], e: dpResult[1], d: depthLimit });
+              return dpResult;
+            }
+          }
+          nodes++;
+      
+          let result;
+          if (!disallowed.has(value)) {
+            if (value <= maxExt) {
+              result = [COST.lit, ["lit", null, null, value]];
+              solveCache.set(value, { c: result[0], e: result[1], d: depth });
+              return result;
+            }
+            if (isPower(value, BASE)) {
+              let n = 0; let tmp = value; while (tmp > 1) { tmp = Math.floor(tmp / BASE); n++; }
+              result = [COST.powbase, ["powbase", n, null, null]];
+              solveCache.set(value, { c: result[0], e: result[1], d: depth });
+              return result;
+            }
+          }
+      
+          if (depth <= 0) {
+            const r = simpleSynthesis(value);
+            solveCache.set(value, { c: r[0], e: r[1], d: depth });
+            return r;
+          }
+          let [best_cost, best_expr] = simpleSynthesis(value)
+
+          // 1) k * BASE^n +/- r
+          if (COST.powbase < best_cost)
+          for (const anchor of basePowers) {
+            if (anchor === value) continue;
+            let n = 0; let tmp2 = anchor; while (tmp2 > 1) { tmp2 = Math.floor(tmp2 / BASE); n++; }
+            const lo = Math.max(1, Math.ceil((value - M2) / anchor));
+            const hi = Math.min(31, Math.floor((value + M2) / anchor), Math.floor(maxVal / anchor));
+            if (lo > hi) continue;
+            for (let k = lo; k <= hi; k++) {
+              const delta = value - anchor * k;
+              const r = Math.abs(delta);
+              if (!disallowed.has(r)) {
+                let total = COST.powbase;
+                let costK, exprK;
+                if (k !== 1) {
+                  if (COST.powbase + COST.mul + simpleSynthesis(k)[0] >= best_cost) continue;
+                  [costK, exprK] = solve(k, depth - 1);
+                  total += COST.mul + costK;
+                }
+                if (r) total += delta < 0 ? COST.sub : COST.add;
+                if (total >= best_cost) continue;
+                let costR, exprR;
+                if (r) {
+                  if (total + simpleSynthesis(r)[0] >= best_cost) continue;
+                  [costR, exprR] = solve(r, depth - 1);
+                  total += costR;
+                }
+                if (total >= best_cost - 1e-12) continue;
+                let b = ["powbase", n, null, null];
+                if (k !== 1)
+                  b = ["mul", exprK, b, null];
+                if (r)
+                  b = delta < 0 ? ["sub", b, exprR, null] : ["add", b, exprR, null];
+                best_cost = total;
+                best_expr = b;
+              }
+            }
+          }
+          if (COST.pow < best_cost) {
+          let powCandidates = nearExactPowers(value);
+          if (powCandidates.length > 1) {
+            const powKeys = powCandidates.map(p => simpleSynthesis(p[1])[0] + simpleSynthesis(p[2])[0]);
+            powCandidates = powCandidates.map((p, i) => ({ p, k: powKeys[i] })).sort((a, b) => a.k - b.k).map(x => x.p);
+          }
+          for (const [p, base, exp] of powCandidates) {
+            const k = Math.abs(p - value);
+            if (k <= M2 && !disallowed.has(k)) {
+              if (simpleSynthesis(base)[0] + COST.pow >= best_cost) continue;
+              const [costBase, exprBase] = solve(base, depth - 1);
+              const estExp = costBase + COST.pow + simpleSynthesis(exp)[0];
+              if (estExp >= best_cost) continue;
+              const [costExp, exprExp] = solve(exp, depth - 1);
+              const op = p < value ? "add" : "sub";
+              const opCost = p < value ? COST.add : COST.sub;
+              const current = COST.pow + costBase + costExp;
+              const optimistic = current + opCost*(k!=0);
+              if (optimistic >= best_cost) continue;
+              let total = optimistic;
+              let costK, exprK;
+              if (k) {
+                if (total + simpleSynthesis(k)[0] >= best_cost) continue;
+                [costK, exprK] = solve(k, depth - 1);
+                total += costK;
+              }
+              if (total >= best_cost - 1e-12) continue;
+              let b=["pow", exprBase, exprExp, null];
+              if (k)
+                b=[op, b, exprK, null];
+              best_cost = total;
+              best_expr = b;
+            }
+            }
+          }
+          // 3.5) Division: (2**n +/- offset) // d
+          if (COST.div < best_cost) {
+            const maxDiv = value > 0 ? Math.min(maxExt, 32, Math.floor(maxVal / value)) : 0;
+            for (let d = 2; d <= maxDiv; d++) {
+              if (disallowed.has(d)) continue;
+              const lo = value * d;
+              if (lo > maxVal) continue;
+              const hi = lo + d - 1;
+              for (let i = 0; i < basePowers.length; i++) {
+                const p = basePowers[i];
+                if (p + maxExt < lo) continue;
+                if (p - maxExt > hi) break;
+                const exp = log2int(p);
+                if (p >= lo && p <= hi) {
+                  const rem = p - lo;
+                  if (rem && disallowed.has(rem)) continue;
+                  let total = COST.powbase + COST.div;
+                  if (rem) total += COST.sub;
+                  if (total < best_cost - 1e-12) {
+                    let entry = ["powbase", exp, null, null];
+                    if (rem) entry = ["sub", entry, ["lit", null, null, rem], null];
+                    best_cost = total;
+                    best_expr = ["div", entry, ["lit", null, null, d], null];
+                  }
+                } else if (p < lo) {
+                  const offset = lo - p;
+                  if (offset <= maxExt && !disallowed.has(offset)) {
+                    let total = COST.powbase + COST.div + COST.add;
+                    if (total < best_cost - 1e-12) {
+                      const entry = ["add", ["powbase", exp, null, null], ["lit", null, null, offset], null];
+                      best_cost = total;
+                      best_expr = ["div", entry, ["lit", null, null, d], null];
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          // 4) Exact factor pairs
+          if (COST.mul < best_cost && !(value > _DP_LIMIT && depth <= 1)) {
+          let pairs = divisorPairs(value);
+          if (pairs.length > 1) {
+            const mulKeys = pairs.map(p => simpleSynthesis(p[0])[0] + simpleSynthesis(p[1])[0]);
+            pairs = pairs.map((p, i) => ({ p, k: mulKeys[i] })).sort((a, b) => a.k - b.k).map(x => x.p);
+          }
+          for (const [a, b] of pairs) {
+            const [simpleA] = simpleSynthesis(a);
+            if (simpleA + COST.mul >= best_cost) continue;
+            const [costA, exprA] = solve(a, depth - 1);
+            if (costA+COST.mul >= best_cost) continue;
+            const [costB, exprB] = solve(b, depth - 1);
+            const total = costA + costB + COST.mul;
+            if (total < best_cost - 1e-12) {
+              best_cost = total;
+              best_expr = ["mul", exprA, exprB, null];
+            }
+            }
+          }
+        
+          // 5) Reduced additive search
+          if (COST.add < best_cost && !(value > _DP_LIMIT && depth <= 1)) {
+          let splits = candidateAddSplits(value);
+          if (splits.length > 1) {
+            const addKeys = splits.map(x => simpleSynthesis(x)[0] + simpleSynthesis(value - x)[0]);
+            splits = splits.map((x, i) => ({ x, k: addKeys[i] })).sort((a, b) => a.k - b.k).map(o => o.x);
+          }
+          for (const a of splits) {
+            const b = value - a;
+            if (a===0 || b===0) continue;
+            const [simpleA] = simpleSynthesis(a);
+            if (simpleA + COST.add >= best_cost) continue;
+            const [costA, exprA] = solve(a, depth - 1);
+            if (costA + COST.add < best_cost) {
+                const [costB, exprB] = solve(b, depth - 1);
+                const total = costA + costB + COST.add;
+                if (total < best_cost - 1e-12) {
+                  best_cost = total;
+                  best_expr = ["add", exprA, exprB, null];
+                }
+            }
+            // Overflow clamp exploit: when value == maxVal (belt limit),
+            // a + (b+1) overshoots then clamps back to maxVal
+            if (value === maxVal && costA + COST.add < best_cost) {
+                const b2 = b + 1;
+                if (b2 >= 1 && b2 <= maxVal && b2 !== b) {
+                    const [costB2, exprB2] = solve(b2, depth - 1);
+                    const total2 = costA + costB2 + COST.add;
+                    if (total2 < best_cost - 1e-12) {
+                      best_cost = total2;
+                      best_expr = ["add", exprA, exprB2, null];
+                    }
+                }
+            }
+
+          }
+          }
+      
+          result = [best_cost,best_expr];
+          solveCache.set(value, { c: best_cost, e: best_expr, d: depth });
+          return result;
+        }
+        let [cost, ast] = solve(target, depthLimit);
+
+        return { cost, ast, nodes };
+      }
+      
+      //============================================================================
+      //  optimization.py port: BFS step-min
+      //============================================================================
+      function leastSteps(target, allowedNumbers, allowedOperators, opts = {}) {
+        const maxStates = opts.maxStates ?? 800000;
+        const startTime = performance.now();
+        const timeoutMs = opts.timeoutMs ?? 8000;
+      
+        for (const num of allowedNumbers) {
+          if (num === target) return { steps: [[0, num, "+", num]], visited: 0, exhausted: false };
+        }
+      
+        const stepData = []; // [value, prevCv, prevNum, prevOp, parentIdx]
+        const visited = new Set();
+        for (const num of allowedNumbers) {
+          stepData.push([num, 0, num, "+", -1]);
+          visited.add(num);
+        }
+      
+        let head = 0;
+        while (head < stepData.length) {
+          if (visited.size > maxStates) return { steps: null, visited: visited.size, exhausted: true, reason: "state limit" };
+          if ((head & 0xfff) === 0 && performance.now() - startTime > timeoutMs)
+            return { steps: null, visited: visited.size, exhausted: true, reason: "timeout" };
+          const cv = stepData[head][0];
+          for (const num of allowedNumbers) {
+            for (const op of allowedOperators) {
+              let nv = null;
+              if (op === "+") nv = cv + num;
+              else if (op === "-") nv = cv - num;
+              else if (op === "*") nv = cv * num;
+              else if (op === "/") { if (num !== 0 && cv % num === 0) nv = Math.floor(cv / num); }
+              if (nv == null || nv < -1e12 || nv > 1e12) continue;
+              if (visited.has(nv)) continue;
+              if (nv === target) {
+                const steps = [[cv, num, op, nv]];
+                let idx = head;
+                while (idx >= 0) {
+                  const [val, prevCv, prevNum, prevOp, parentIdx] = stepData[idx];
+                  steps.push([prevCv, prevNum, prevOp, val]);
+                  idx = parentIdx;
+                }
+                steps.reverse();
+                return { steps, visited: visited.size, exhausted: false };
+              }
+              stepData.push([nv, cv, num, op, head]);
+              visited.add(nv);
+            }
+          }
+          head++;
+        }
+        return { steps: null, visited: visited.size, exhausted: true, reason: "no solution" };
+      }
+      
+      //============================================================================
+      //  RENDER / EVAL
+      //============================================================================
+      const PREC = { add: 1, sub: 1, mul: 2, div: 2, pow: 3 };
+      
+      // flatten left-associative chains for display: ((a+b)+c) -> [a,b,c]
+      function flattenAdd(node) {
+        if (!Array.isArray(node) || node[0] !== "add") return [node];
+        return flattenAdd(node[1]).concat(flattenAdd(node[2]));
+      }
+      
+      function renderHTML(node, parentPrec = 0) {
+        const op = node[0];
+        // [op, left, right, value] for non-leaf nodes
+        // [op, null, null, value] for literals
+        // [op, n, null, null] for powbase
+        if (op === "lit") return `<span class="num">${node[3]}</span>`;
+        if (op === "powbase") return `<span class="pow">${BASE}<sup>${node[1]}</sup></span>`;
+        const myPrec = PREC[op];
+      
+        if (op === "add") {
+          const terms = flattenAdd(node);
+          const inner = terms.map(t => renderHTML(t, myPrec + 1)).join(`<span class="op"> + </span>`);
+          return myPrec < parentPrec ? `(${inner})` : inner;
+        }
+        if (op === "sub") {
+          const inner = renderHTML(node[1], myPrec) + `<span class="op"> − </span>` + renderHTML(node[2], myPrec + 1);
+          return myPrec < parentPrec ? `(${inner})` : inner;
+        }
+        if (op === "mul") {
+          const inner = renderHTML(node[1], myPrec) + `<span class="op"> × </span>` + renderHTML(node[2], myPrec);
+          return myPrec < parentPrec ? `(${inner})` : inner;
+        }
+        if (op === "div") {
+          const inner = renderHTML(node[1], myPrec) + `<span class="op"> / </span>` + renderHTML(node[2], myPrec);
+          return myPrec < parentPrec ? `(${inner})` : inner;
+        }
+        if (op === "pow") {
+          const inner = renderHTML(node[1], myPrec + 1) + `<span class="op">^</span>` + renderHTML(node[2], myPrec);
+          return myPrec < parentPrec ? `(${inner})` : inner;
+        }
+        return "?";
+      }
+      
+      function renderText(node, parentPrec = 0) {
+        const op = node[0];
+        if (op === "lit") return String(node[3]);
+        if (op === "powbase") return `${BASE}**${node[1]}`;
+        const myPrec = PREC[op];
+        if (op === "add") {
+          const terms = flattenAdd(node);
+          const inner = terms.map(t => renderText(t, myPrec + 1)).join(" + ");
+          return myPrec < parentPrec ? `(${inner})` : inner;
+        }
+        if (op === "sub") {
+          const inner = renderText(node[1], myPrec) + " - " + renderText(node[2], myPrec + 1);
+          return myPrec < parentPrec ? `(${inner})` : inner;
+        }
+        if (op === "mul") {
+          const inner = renderText(node[1], myPrec) + "*" + renderText(node[2], myPrec);
+          return myPrec < parentPrec ? `(${inner})` : inner;
+        }
+        if (op === "div") {
+          const inner = renderText(node[1], myPrec) + "/" + renderText(node[2], myPrec);
+          return myPrec < parentPrec ? `(${inner})` : inner;
+        }
+        if (op === "pow") {
+          const inner = renderText(node[1], myPrec + 1) + "**" + renderText(node[2], myPrec);
+          return myPrec < parentPrec ? `(${inner})` : inner;
+        }
+        return "?";
+      }
+      
+      function clamp(n) { return Math.min(MAX_VAL, Math.max(MIN_VAL, n)); }
+      function evalNode(node) {
+        const op = node[0];
+        if (op === "lit") return node[3];
+        if (op === "powbase") return BASE ** node[1];
+        if (op === "add") return clamp(evalNode(node[1]) + evalNode(node[2]));
+        if (op === "sub") return clamp(evalNode(node[1]) - evalNode(node[2]));
+        if (op === "mul") return clamp(evalNode(node[1]) * evalNode(node[2]));
+        if (op === "div") return clamp(Math.floor(evalNode(node[1]) / evalNode(node[2])));
+        if (op === "pow") return clamp(evalNode(node[1]) ** evalNode(node[2]));
+        return NaN;
+      }
+      
+      // Walk the tree post-order to produce a "build steps" list.
+      // Uses bottom-up evaluation — each subtree is evaluated exactly once.
+      function buildSteps(node) {
+        const list = [];
+        const seen = new Map();
+        (function dfs(n) {
+          const op = n[0];
+          if (op === "lit" || op === "powbase") {
+            const v = op === "lit" ? n[3] : BASE ** n[1];
+            const key = renderText(n);
+            if (!seen.has(key)) { seen.set(key, true); list.push({ kind: op, expr: renderHTML(n), value: v }); }
+            return v;
+          }
+          const lv = dfs(n[1]);
+          const rv = dfs(n[2]);
+          let v;
+          if (op === "add") v = clamp(lv + rv);
+          else if (op === "sub") v = clamp(lv - rv);
+          else if (op === "mul") v = clamp(lv * rv);
+          else if (op === "div") v = clamp(Math.floor(lv / rv));
+          else if (op === "pow") v = clamp(lv ** rv);
+          const key = renderText(n);
+          if (!seen.has(key)) { seen.set(key, true); list.push({ kind: op, expr: renderHTML(n), value: v }); }
+          return v;
+        })(node);
+        return list;
+      }
+      
+      //============================================================================
+      //  GUI
+      //============================================================================
+      const $ = (id) => document.getElementById(id);
+      const targetIn = $("target"), maxExtIn = $("maxExt"), engineIn = $("engine"), disallowedIn = $("disallowed"), bfsOpsIn = $("bfsOps"), bfsOpsField = $("bfsOpsField"), runBtn = $("runBtn"), enginestat = $("enginestat");
+      
+      document.querySelectorAll(".preset").forEach(b => b.addEventListener("click", () => { targetIn.value = b.dataset.target; run(); }));
+      engineIn.addEventListener("change", () => {
+        bfsOpsField.style.display = engineIn.value === "bfs" ? "" : "none";
+        enginestat.textContent = "ENGINE: " + (engineIn.value === "bfs" ? "BFS-MIN" : "COST-OPT");
+      });
+      runBtn.addEventListener("click", run);
+      [targetIn, maxExtIn, disallowedIn].forEach(el => el.addEventListener("keydown", e => { if (e.key === "Enter") run(); }));
+      
+      function parseInputs() {
+        const t = targetIn.value.trim().replace(/[, _]/g, "");
+        const target = parseInt(t, 10);
+        if (!Number.isFinite(target) || target < 0) throw new Error("Target must be a non-negative integer.");
+        if (target > MAX_VAL) throw new Error(`Target exceeds max (2^31 − 1 = ${MAX_VAL}).`);
+        const maxExt = parseInt(maxExtIn.value, 10);
+        if (!Number.isFinite(maxExt) || maxExt < 1) throw new Error("U must be ≥ 1.");
+        const disallowedRaw = disallowedIn.value.trim();
+        const disallowed = [];
+        if (disallowedRaw) {
+          for (const tok of disallowedRaw.split(/[,\s]+/)) {
+            if (!tok) continue;
+            const n = parseInt(tok, 10);
+            if (!Number.isFinite(n)) throw new Error(`Disallowed list contains non-integer: "${tok}"`);
+            disallowed.push(n);
+          }
+        }
+        return { target, maxExt, disallowed };
+      }
+      
+      function renderBitBreakdown(target, maxExt) {
+        const labels = [];
+        const bits = [];
+        const setList = [];
+        for (let i = 31; i >= 0; i--) {
+          labels.push(`<div class="bit-label">${i}</div>`);
+          // Floor-based check (safe past bit 30 where JS signed bitops break)
+          const set = ((Math.floor(target / Math.pow(2, i)) % 2) === 1);
+          bits.push(`<div class="bit ${set ? "set" : ""}" title="2^${i} = ${Math.pow(2, i)}">${set ? "1" : "0"}</div>`);
+          if (set) setList.push({ p: i, val: Math.pow(2, i) });
+        }
+        setList.sort((a, b) => b.p - a.p);
+        const chips = setList.map(x => `<span class="bit-chip">2<sup>${x.p}</sup> = ${x.val.toLocaleString()}</span>`).join("");
+        $("binMeta").textContent = `DEC=${target.toLocaleString()} / HEX=0x${target.toString(16).toUpperCase()} / BIN=${target.toString(2)}`;
+        $("binPanel").innerHTML = `
+          <div class="bit-labels">${labels.join("")}</div>
+          <div class="bits-grid">${bits.join("")}</div>
+          <div class="bit-list">${chips || '<span style="color:var(--text-faint);">target = 0 (no set bits)</span>'}</div>
+        `;
+      }
+      function evalCost(node) {
+  const op = node[0];
+
+  if (op === "lit")
+    return COST.lit;
+
+  if (op === "powbase")
+    return COST.powbase;
+
+  if (op === "add")
+    return evalCost(node[1]) + evalCost(node[2]) + COST.add;
+
+  if (op === "sub")
+    return evalCost(node[1]) + evalCost(node[2]) + COST.sub;
+
+  if (op === "mul")
+    return evalCost(node[1]) + evalCost(node[2]) + COST.mul;
+
+  if (op === "div")
+    return evalCost(node[1]) + evalCost(node[2]) + COST.div;
+
+  if (op === "pow")
+    return evalCost(node[1]) + evalCost(node[2]) + COST.pow;
+
+  return Infinity;
+}
+      function renderResult(target, ast, cost, nodesCount, ms, expectedValue, mode) {
+        const html = renderHTML(ast);
+        const text = renderText(ast);
+        const actual = evalNode(ast);
+        const verified = actual === expectedValue && Math.abs(cost - evalCost(ast))<1e-12;
+        console.log(`value: ${actual} vs ${expectedValue}, cost: ${cost} vs ${evalCost(ast)}`);
+        $("exprPanel").innerHTML = `
+          <div class="expr-wrap">
+            <div class="expr">${html}</div>
+            <button class="ghost copy-btn" id="copyBtn">COPY</button>
+          </div>
+          <div style="margin-top:10px;font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1.5px;">Plaintext</div>
+          <pre style="margin-top:6px;padding:10px;background:var(--bg);border:1px solid var(--line);font-size:12px;color:var(--text-dim);white-space:pre-wrap;word-break:break-all;">${text.replace(/</g, "&lt;")}</pre>
+        `;
+        $("exprMeta").textContent = `≡ ${actual.toLocaleString()}${verified ? "" : " ⚠ MISMATCH"}`;
+        $("copyBtn").onclick = async () => {
+          try { await navigator.clipboard.writeText(text); $("copyBtn").textContent = "COPIED"; setTimeout(() => $("copyBtn").textContent = "COPY", 1200); }
+          catch (e) { $("copyBtn").textContent = "FAIL"; }
+        };
+      
+        const costStr = mode === "bfs" ? `${nodesCount}` : cost.toFixed(2);
+        const costLabel = mode === "bfs" ? "Steps" : "Cost";
+        $("statsPanel").innerHTML = `
+          <div class="stat"><div class="stat-label">${costLabel}</div><div class="stat-value amber">${costStr}</div></div>
+          <div class="stat"><div class="stat-label">Verified</div><div class="stat-value ${verified ? "green" : "red"}">${verified ? "OK" : "FAIL"}</div></div>
+          <div class="stat"><div class="stat-label">${mode === "bfs" ? "States visited" : "Search nodes"}</div><div class="stat-value cyan">${nodesCount.toLocaleString()}</div></div>
+          <div class="stat"><div class="stat-label">Time</div><div class="stat-value">${ms.toFixed(1)} ms</div></div>
+        `;
+      
+        // Build steps view
+        const steps = buildSteps(ast);
+        const stepsHtml = steps.map((s, i) => {
+          const cls = s.kind === "lit" ? "literal" : s.kind === "powbase" ? "power" : "";
+          return `<div class="step ${cls}">
+            <div class="step-idx">${String(i + 1).padStart(2, "0")}</div>
+            <div><span class="step-expr">${s.expr}</span><span class="step-eq"> = </span><span class="step-val">${s.value.toLocaleString()}</span></div>
+          </div>`;
+        }).join("");
+        $("stepsPanel").innerHTML = stepsHtml || `<div class="empty">// no steps</div>`;
+        $("stepsMeta").textContent = `${steps.length} subexpressions`;
+      }
+      
+      function renderBfsSteps(target, steps, visited, ms) {
+        const html = steps.map((s, i) => {
+          const [cv, n, op, nv] = s;
+          if (i === 0) {
+            return `<div class="step literal">
+              <div class="step-idx">${String(i + 1).padStart(2, "0")}</div>
+              <div><span class="step-expr"><span class="num">${n}</span></span><span class="step-eq"> = </span><span class="step-val">${nv.toLocaleString()}</span></div>
+            </div>`;
+          }
+          const opChar = op === "*" ? " × " : op === "/" ? " ÷ " : ` ${op} `;
+          return `<div class="step">
+            <div class="step-idx">${String(i + 1).padStart(2, "0")}</div>
+            <div><span class="step-expr"><span class="num">${cv.toLocaleString()}</span><span class="op">${opChar}</span><span class="num">${n}</span></span><span class="step-eq"> = </span><span class="step-val">${nv.toLocaleString()}</span></div>
+          </div>`;
+        }).join("");
+      
+        const text = bfsToExpr(steps);
+        $("exprPanel").innerHTML = `
+          <div class="expr-wrap">
+            <div class="expr">${escapeHtml(text)}</div>
+            <button class="ghost copy-btn" id="copyBtn">COPY</button>
+          </div>
+        `;
+        const verified = steps.length > 0 && steps[steps.length - 1][3] === target;
+        $("exprMeta").textContent = `≡ ${steps.length ? steps[steps.length - 1][3].toLocaleString() : 0}${verified ? "" : " ⚠ MISMATCH"}`;
+        $("copyBtn").onclick = async () => { try { await navigator.clipboard.writeText(text); $("copyBtn").textContent = "COPIED"; setTimeout(() => $("copyBtn").textContent = "COPY", 1200); } catch (_) { } };
+      
+        $("statsPanel").innerHTML = `
+          <div class="stat"><div class="stat-label">Steps</div><div class="stat-value amber">${steps.length}</div></div>
+          <div class="stat"><div class="stat-label">Verified</div><div class="stat-value ${verified ? "green" : "red"}">${verified ? "OK" : "FAIL"}</div></div>
+          <div class="stat"><div class="stat-label">States visited</div><div class="stat-value cyan">${visited.toLocaleString()}</div></div>
+          <div class="stat"><div class="stat-label">Time</div><div class="stat-value">${ms.toFixed(1)} ms</div></div>
+        `;
+      
+        $("stepsPanel").innerHTML = html;
+        $("stepsMeta").textContent = `${steps.length} steps`;
+      }
+      
+      function bfsToExpr(steps) {
+        if (steps.length === 0) return "";
+        let acc = String(steps[0][3]);
+        for (let i = 1; i < steps.length; i++) {
+          const [cv, n, op, nv] = steps[i];
+          acc = `(${acc}${op}${n})`;
+        }
+        return acc;
+      }
+      
+      function escapeHtml(s) { return s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+      
+      let runToken = 0;
+      function run() {
+        let inputs;
+        try { inputs = parseInputs(); }
+        catch (e) {
+          $("exprPanel").innerHTML = `<div class="error">${e.message}</div>`;
+          $("statsPanel").innerHTML = `<div class="stat"><div class="stat-label">Cost</div><div class="stat-value">—</div></div>`;
+          $("stepsPanel").innerHTML = `<div class="empty">// no result</div>`;
+          return;
+        }
+        dot.classList.remove('active');
+      dot.classList.add('off');
+        const { target, maxExt, disallowed } = inputs;
+      
+        renderBitBreakdown(target, maxExt);
+      
+        if (target === 0) {
+          $("exprPanel").innerHTML = `<div class="expr"><span class="num">0</span></div>`;
+          $("exprMeta").textContent = "≡ 0";
+          $("statsPanel").innerHTML = `
+            <div class="stat"><div class="stat-label">Cost</div><div class="stat-value amber">0.00</div></div>
+            <div class="stat"><div class="stat-label">Verified</div><div class="stat-value green">OK</div></div>
+            <div class="stat"><div class="stat-label">Search nodes</div><div class="stat-value cyan">0</div></div>
+            <div class="stat"><div class="stat-label">Time</div><div class="stat-value">0.0 ms</div></div>`;
+          $("stepsPanel").innerHTML = `<div class="empty">// trivial</div>`;
+          return;
+        }
+      
+        const myToken = ++runToken;
+        $("exprPanel").innerHTML = `<div class="computing">computing</div>`;
+        $("statsPanel").innerHTML = `
+          <div class="stat"><div class="stat-label">Cost</div><div class="stat-value">…</div></div>
+          <div class="stat"><div class="stat-label">Verified</div><div class="stat-value">…</div></div>
+          <div class="stat"><div class="stat-label">Search nodes</div><div class="stat-value">…</div></div>
+          <div class="stat"><div class="stat-label">Time</div><div class="stat-value">…</div></div>`;
+        $("stepsPanel").innerHTML = `<div class="computing">computing</div>`;
+        runBtn.disabled = true;
+      
+        // Defer to next tick so UI repaints
+        function recompute() {
+          try {
+            if (engineIn.value === "bfs") {
+              const ops = bfsOpsIn.value.split(",");
+              const allowedNumbers = [];
+              for (let i = 1; i <= maxExt; i++) if (!disallowed.includes(i)) allowedNumbers.push(i);
+              const t0 = performance.now();
+              const r = leastSteps(target, allowedNumbers, ops, { maxStates: 800000, timeoutMs: 8000 });
+              const ms = performance.now() - t0;
+              if (r.steps == null) {
+                $("exprPanel").innerHTML = `<div class="error">BFS aborted: ${r.reason}. Visited ${r.visited.toLocaleString()} states. Try a smaller target or use the Cost-optimal engine.</div>`;
+                $("statsPanel").innerHTML = `
+                  <div class="stat"><div class="stat-label">Steps</div><div class="stat-value red">—</div></div>
+                  <div class="stat"><div class="stat-label">Verified</div><div class="stat-value red">FAIL</div></div>
+                  <div class="stat"><div class="stat-label">States visited</div><div class="stat-value cyan">${r.visited.toLocaleString()}</div></div>
+                  <div class="stat"><div class="stat-label">Time</div><div class="stat-value">${ms.toFixed(1)} ms</div></div>`;
+                $("stepsPanel").innerHTML = `<div class="empty">// no result</div>`;
+              } else {
+                renderBfsSteps(target, r.steps, r.visited, ms);
+              }
+            } else {
+              const t0 = performance.now();
+              const { cost, ast, nodes } = synthesize(target, { maxExt, disallowed });
+              const ms = performance.now() - t0;
+              renderResult(target, ast, cost, nodes, ms, target, "cost");
+            }
+          } catch (e) {
+            console.error(e);
+            $("exprPanel").innerHTML = `<div class="error">Error: ${e.message}</div>`;
+          } finally {
+            runBtn.disabled = false;
+            dot.classList.remove('off');
+            dot.classList.add('active');
+          }
+        };
+        setTimeout(() => {
+          if (myToken !== runToken) return;
+          recompute();
+        }, 30);
+      }
+      
+      // Auto-run on load
+      window.addEventListener("DOMContentLoaded", () => { run(); });
+      document.querySelectorAll("[data-cost]").forEach(input => {
+        const key = input.dataset.cost;
+      
+        // initialize UI from COST
+        input.value = COST[key];
+      
+        // live update COST when edited
+        input.addEventListener("input", () => {
+          const parsed = parseFloat(input.value);
+          if (!isNaN(parsed)) COST[key] = parsed;
+          run();
+        });
+      });
+    </script>
+  </body>
+</html>
