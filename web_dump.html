@@ -331,6 +331,10 @@
                 <td>pow (a^b)</td>
                 <td><input type="number" step="0.01" data-cost="pow"></td>
               </tr>
+              <tr>
+                <td>div (a/b)</td>
+                <td><input type="number" step="0.01" data-cost="div"></td>
+              </tr>
             </table>
           </div>
         </div>
@@ -404,8 +408,11 @@
       "use strict";
       
       const BASE = 2;
-      const COST = { add: 0.5, sub: 1.0, mul: 1.0, pow: 1.0 / 1.1, powbase: 0.0, lit: 0.0 };
+      const COST = { add: 0.5, sub: 1.0, mul: 1.0, div: 1.0, pow: 1.0 / 1.1, powbase: 0.0, lit: 0.0 };
       const MAX_VAL = 2147483647; // 2^31 - 1
+      const MIN_VAL = -2147483648; // -(2^31)
+
+
 
       const dot = document.querySelector('.dot');
       dot.classList.remove('off');
@@ -422,11 +429,13 @@
       function log2int(n) { return 31 - Math.clz32(n); }
       
       const _divisorPairsCache = new Map();
+      const _DIVISOR_PAIR_MAX_ITER = 2000;
       function divisorPairs(n) {
         if (_divisorPairsCache.has(n)) return _divisorPairsCache.get(n);
         const out = [];
         const sq = Math.floor(Math.sqrt(n));
-        for (let a = 2; a <= sq; a++) if (n % a === 0) out.push([a, n / a]);
+        const maxA = Math.min(sq, _DIVISOR_PAIR_MAX_ITER);
+        for (let a = 2; a <= maxA; a++) if (n % a === 0) out.push([a, n / a]);
         _divisorPairsCache.set(n, out);
         return out;
       }
@@ -529,7 +538,8 @@
         const INF = Infinity;
         const costArr = new Array(L + 1);
         const exprArr = new Array(L + 1);
-        for (let i = 0; i <= L; i++) { costArr[i] = INF; exprArr[i] = null; }
+        const nearArr = new Array(L + 1);
+        for (let i = 0; i <= L; i++) { costArr[i] = INF; exprArr[i] = null; nearArr[i] = Infinity; }
 
         const seeds = new Set();
         for (let x = 0; x <= maxLiteral; x++) seeds.add(x);
@@ -538,10 +548,12 @@
 
         for (const s of seeds) {
           costArr[s] = 0;
+          nearArr[s] = 0;
           if (s <= maxLiteral) {
             exprArr[s] = ["lit", null, null, s];
           } else {
-            exprArr[s] = ["powbase", log2int(s), null, null];
+            let exp = 0; let tmp = s; while (tmp > 1) { tmp = Math.floor(tmp / BASE); exp++; }
+            exprArr[s] = ["powbase", exp, null, null];
           }
         }
 
@@ -562,8 +574,10 @@
             const addVal = val + seed;
             if (addVal <= limit) {
               const newCost = curCost + seedCost + COST.add;
-              if (newCost < costArr[addVal]) {
+              const near = Math.abs(val - seed);
+              if (newCost < costArr[addVal] || (newCost === costArr[addVal] && near < nearArr[addVal])) {
                 costArr[addVal] = newCost;
+                nearArr[addVal] = near;
                 exprArr[addVal] = ["add", exprArr[val], exprArr[seed], null];
                 pq.push(newCost, addVal);
               }
@@ -573,8 +587,10 @@
             if (val >= seed) {
               const subVal = val - seed;
               const newCost = curCost + seedCost + COST.sub;
-              if (newCost < costArr[subVal]) {
+              const near = val - seed;
+              if (newCost < costArr[subVal] || (newCost === costArr[subVal] && near < nearArr[subVal])) {
                 costArr[subVal] = newCost;
+                nearArr[subVal] = near;
                 exprArr[subVal] = ["sub", exprArr[val], exprArr[seed], null];
                 pq.push(newCost, subVal);
               }
@@ -584,8 +600,10 @@
             if (seed >= val) {
               const subVal = seed - val;
               const newCost = curCost + seedCost + COST.sub;
-              if (newCost < costArr[subVal]) {
+              const near = seed - val;
+              if (newCost < costArr[subVal] || (newCost === costArr[subVal] && near < nearArr[subVal])) {
                 costArr[subVal] = newCost;
+                nearArr[subVal] = near;
                 exprArr[subVal] = ["sub", exprArr[seed], exprArr[val], null];
                 pq.push(newCost, subVal);
               }
@@ -595,8 +613,10 @@
             const mulVal = val * seed;
             if (mulVal <= limit && mulVal !== 0) {
               const newCost = curCost + seedCost + COST.mul;
-              if (newCost < costArr[mulVal]) {
+              const near = Math.abs(val - seed);
+              if (newCost < costArr[mulVal] || (newCost === costArr[mulVal] && near < nearArr[mulVal])) {
                 costArr[mulVal] = newCost;
+                nearArr[mulVal] = near;
                 exprArr[mulVal] = ["mul", exprArr[val], exprArr[seed], null];
                 pq.push(newCost, mulVal);
               }
@@ -605,15 +625,20 @@
 
           // pow: val ** seed
           if (val >= 2) {
+            const bitLimit = log2int(limit) + 1;
             for (const seed of seedList) {
               if (seed >= 2 && seed <= 15) {
-                const powVal = Math.pow(val, seed);
-                if (powVal <= limit && Number.isInteger(powVal)) {
-                  const newCost = curCost + costArr[seed] + COST.pow;
-                  if (newCost < costArr[powVal]) {
-                    exprArr[powVal] = ["pow", exprArr[val], exprArr[seed], null];
-                    costArr[powVal] = newCost;
-                    pq.push(newCost, powVal);
+                if (seed * (log2int(val) + 1) <= bitLimit) {
+                  const powVal = Math.pow(val, seed);
+                  if (powVal <= limit) {
+                    const newCost = curCost + costArr[seed] + COST.pow;
+                    const near = Math.abs(val - seed);
+                    if (newCost < costArr[powVal] || (newCost === costArr[powVal] && near < nearArr[powVal])) {
+                      exprArr[powVal] = ["pow", exprArr[val], exprArr[seed], null];
+                      nearArr[powVal] = near;
+                      costArr[powVal] = newCost;
+                      pq.push(newCost, powVal);
+                    }
                   }
                 }
               }
@@ -622,15 +647,20 @@
 
           // pow: seed ** val
           if (val >= 2 && val <= 15) {
+            const bitLimit = log2int(limit) + 1;
             for (const seed of seedList) {
               if (seed >= 2) {
-                const powVal = Math.pow(seed, val);
-                if (powVal <= limit && Number.isInteger(powVal)) {
-                  const newCost = curCost + costArr[seed] + COST.pow;
-                  if (newCost < costArr[powVal]) {
-                    exprArr[powVal] = ["pow", exprArr[seed], exprArr[val], null];
-                    costArr[powVal] = newCost;
-                    pq.push(newCost, powVal);
+                if (val * (log2int(seed) + 1) <= bitLimit) {
+                  const powVal = Math.pow(seed, val);
+                  if (powVal <= limit) {
+                    const newCost = curCost + costArr[seed] + COST.pow;
+                    const near = Math.abs(seed - val);
+                    if (newCost < costArr[powVal] || (newCost === costArr[powVal] && near < nearArr[powVal])) {
+                      exprArr[powVal] = ["pow", exprArr[seed], exprArr[val], null];
+                      nearArr[powVal] = near;
+                      costArr[powVal] = newCost;
+                      pq.push(newCost, powVal);
+                    }
                   }
                 }
               }
@@ -644,8 +674,10 @@
               const mulVal2 = val * other;
               if (mulVal2 <= limit) {
                 const newCost = curCost + costArr[other] + COST.mul;
-                if (newCost < costArr[mulVal2]) {
+                const near = Math.abs(val - other);
+                if (newCost < costArr[mulVal2] || (newCost === costArr[mulVal2] && near < nearArr[mulVal2])) {
                   exprArr[mulVal2] = ["mul", exprArr[val], exprArr[other], null];
+                  nearArr[mulVal2] = near;
                   costArr[mulVal2] = newCost;
                   pq.push(newCost, mulVal2);
                 }
@@ -653,8 +685,10 @@
               const addVal2 = val + other;
               if (addVal2 <= limit) {
                 const newCost = curCost + costArr[other] + COST.add;
-                if (newCost < costArr[addVal2]) {
+                const near = Math.abs(val - other);
+                if (newCost < costArr[addVal2] || (newCost === costArr[addVal2] && near < nearArr[addVal2])) {
                   exprArr[addVal2] = ["add", exprArr[val], exprArr[other], null];
+                  nearArr[addVal2] = near;
                   costArr[addVal2] = newCost;
                   pq.push(newCost, addVal2);
                 }
@@ -699,6 +733,7 @@
         let dpHits = 0;
         ensureOptimalTable(maxExt, maxVal);
         const M2 = maxExt * 2;
+        const _maxBaseExp = maxVal < MAX_VAL ? log2int(maxVal) : _BASE_POWERS.length;
         const simpleSynthCache = new Map();
         const nearExactPowersCache = new Map();
         const candidateAddSplitsCache = new Map();
@@ -713,8 +748,8 @@
             simpleSynthCache.set(value, result);
             return result;
           }
-          if (value > 0 && (value & (value - 1)) === 0) {
-            const n = log2int(value);
+          if (value > 0 && isPower(value, BASE)) {
+            let n = 0; let tmp = value; while (tmp > 1) { tmp = Math.floor(tmp / BASE); n++; }
             result = [COST.powbase, ["powbase", n, null, null]];
             simpleSynthCache.set(value, result);
             return result;
@@ -739,40 +774,34 @@
           let totalCost = 0;
           let i = 0;
           while (i < digits.length) {
-            const [digit, start] = digits[i];
-            if (digit === 1) {
-              let j = i;
-              while (j + 1 < digits.length && digits[j + 1][0] === 1 && digits[j + 1][1] === digits[j][1] + 1) j++;
-              const end = digits[j][1];
-              const length = end - start + 1;
-              if (length >= 3) {
-                const cost_uncompressed=length*COST.powbase + (length - 1) * COST.add;
-                const cost_compressed=COST.sub+2*COST.powbase;
-                const canCompress = BASE === 2 &&
-                    Math.pow(BASE, end + 1) < maxVal &&
-                    cost_compressed <= cost_uncompressed;
-                if (!canCompress){
-                  const streakParts = Array.from(
-                    { length },
-                    (_, i) => ["powbase", start + i, null, null]
-                  );
-                  parts.push(buildBalanced(streakParts));
-                  totalCost += cost_uncompressed;
-                } else {
-                  parts.push(["sub", ["powbase", end + 1, null, null], ["powbase", start, null, null], null]);
-                  totalCost += cost_compressed;
-                }
+            const [, start] = digits[i];
+            let j = i;
+            while (j + 1 < digits.length && digits[j + 1][0] === 1 && digits[j + 1][1] === digits[j][1] + 1) j++;
+            const end = digits[j][1];
+            const length = end - start + 1;
+            if (length >= 3) {
+              const cost_uncompressed=length*COST.powbase + (length - 1) * COST.add;
+              const cost_compressed=COST.sub+2*COST.powbase;
+              const canCompress = BASE === 2 &&
+                  end + 1 <= _maxBaseExp &&
+                  cost_compressed <= cost_uncompressed;
+              if (!canCompress){
+                const streakParts = Array.from(
+                  { length },
+                  (_, i) => ["powbase", start + i, null, null]
+                );
+                parts.push(buildBalanced(streakParts));
+                totalCost += cost_uncompressed;
               } else {
-                for (let p = start; p <= end; p++) {
-                  parts.push(["powbase", p, null, null]); totalCost += COST.powbase;
-                }
+                parts.push(["sub", ["powbase", end + 1, null, null], ["powbase", start, null, null], null]);
+                totalCost += cost_compressed;
               }
-              i = j + 1;
             } else {
-              if (start === 0) { parts.push(["lit", null, null, digit]); totalCost += COST.lit; }
-              else { parts.push(["mul", ["lit", null, null, digit], ["powbase", start, null, null], null]); totalCost += COST.powbase + COST.mul + COST.lit; }
-              i++;
+              for (let p = start; p <= end; p++) {
+                parts.push(["powbase", p, null, null]); totalCost += COST.powbase;
+              }
             }
+            i = j + 1;
           }
           const expr = buildBalanced(parts);
           if (parts.length > 1) totalCost += (parts.length - 1) * COST.add;
@@ -847,7 +876,7 @@
               return result;
             }
             if (isPower(value, BASE)) {
-              const n = BASE === 2 ? log2int(value) : Math.round(Math.log(value) / Math.log(BASE));
+              let n = 0; let tmp = value; while (tmp > 1) { tmp = Math.floor(tmp / BASE); n++; }
               result = [COST.powbase, ["powbase", n, null, null]];
               solveCache.set(value, { c: result[0], e: result[1], d: depth });
               return result;
@@ -865,7 +894,7 @@
           if (COST.powbase < best_cost)
           for (const anchor of basePowers) {
             if (anchor === value) continue;
-            const n = BASE === 2 ? log2int(anchor) : Math.round(Math.log(anchor) / Math.log(BASE));
+            let n = 0; let tmp2 = anchor; while (tmp2 > 1) { tmp2 = Math.floor(tmp2 / BASE); n++; }
             const lo = Math.max(1, Math.ceil((value - M2) / anchor));
             const hi = Math.min(31, Math.floor((value + M2) / anchor), Math.floor(maxVal / anchor));
             if (lo > hi) continue;
@@ -876,6 +905,7 @@
                 let total = COST.powbase;
                 let costK, exprK;
                 if (k !== 1) {
+                  if (COST.powbase + COST.mul + simpleSynthesis(k)[0] >= best_cost) continue;
                   [costK, exprK] = solve(k, depth - 1);
                   total += COST.mul + costK;
                 }
@@ -883,6 +913,7 @@
                 if (total >= best_cost) continue;
                 let costR, exprR;
                 if (r) {
+                  if (total + simpleSynthesis(r)[0] >= best_cost) continue;
                   [costR, exprR] = solve(r, depth - 1);
                   total += costR;
                 }
@@ -898,12 +929,18 @@
             }
           }
           if (COST.pow < best_cost) {
-          const powCandidates = [...nearExactPowers(value)].sort((a, b) => (simpleSynthesis(a[1])[0] + simpleSynthesis(a[2])[0]) - (simpleSynthesis(b[1])[0] + simpleSynthesis(b[2])[0]));
+          let powCandidates = nearExactPowers(value);
+          if (powCandidates.length > 1) {
+            const powKeys = powCandidates.map(p => simpleSynthesis(p[1])[0] + simpleSynthesis(p[2])[0]);
+            powCandidates = powCandidates.map((p, i) => ({ p, k: powKeys[i] })).sort((a, b) => a.k - b.k).map(x => x.p);
+          }
           for (const [p, base, exp] of powCandidates) {
             const k = Math.abs(p - value);
             if (k <= M2 && !disallowed.has(k)) {
+              if (simpleSynthesis(base)[0] + COST.pow >= best_cost) continue;
               const [costBase, exprBase] = solve(base, depth - 1);
-              if (costBase + COST.pow >= best_cost) continue;
+              const estExp = costBase + COST.pow + simpleSynthesis(exp)[0];
+              if (estExp >= best_cost) continue;
               const [costExp, exprExp] = solve(exp, depth - 1);
               const op = p < value ? "add" : "sub";
               const opCost = p < value ? COST.add : COST.sub;
@@ -913,6 +950,7 @@
               let total = optimistic;
               let costK, exprK;
               if (k) {
+                if (total + simpleSynthesis(k)[0] >= best_cost) continue;
                 [costK, exprK] = solve(k, depth - 1);
                 total += costK;
               }
@@ -925,9 +963,52 @@
             }
             }
           }
+          // 3.5) Division: (2**n +/- offset) // d
+          if (COST.div < best_cost) {
+            const maxDiv = value > 0 ? Math.min(maxExt, 32, Math.floor(maxVal / value)) : 0;
+            for (let d = 2; d <= maxDiv; d++) {
+              if (disallowed.has(d)) continue;
+              const lo = value * d;
+              if (lo > maxVal) continue;
+              const hi = lo + d - 1;
+              for (let i = 0; i < basePowers.length; i++) {
+                const p = basePowers[i];
+                if (p + maxExt < lo) continue;
+                if (p - maxExt > hi) break;
+                const exp = log2int(p);
+                if (p >= lo && p <= hi) {
+                  const rem = p - lo;
+                  if (rem && disallowed.has(rem)) continue;
+                  let total = COST.powbase + COST.div;
+                  if (rem) total += COST.sub;
+                  if (total < best_cost - 1e-12) {
+                    let entry = ["powbase", exp, null, null];
+                    if (rem) entry = ["sub", entry, ["lit", null, null, rem], null];
+                    best_cost = total;
+                    best_expr = ["div", entry, ["lit", null, null, d], null];
+                  }
+                } else if (p < lo) {
+                  const offset = lo - p;
+                  if (offset <= maxExt && !disallowed.has(offset)) {
+                    let total = COST.powbase + COST.div + COST.add;
+                    if (total < best_cost - 1e-12) {
+                      const entry = ["add", ["powbase", exp, null, null], ["lit", null, null, offset], null];
+                      best_cost = total;
+                      best_expr = ["div", entry, ["lit", null, null, d], null];
+                    }
+                  }
+                }
+              }
+            }
+          }
+
           // 4) Exact factor pairs
-          if (COST.mul < best_cost) {
-          const pairs = [...divisorPairs(value)].sort((p1, p2) => (simpleSynthesis(p1[0])[0] + simpleSynthesis(p1[1])[0]) - (simpleSynthesis(p2[0])[0] + simpleSynthesis(p2[1])[0]));
+          if (COST.mul < best_cost && !(value > _DP_LIMIT && depth <= 1)) {
+          let pairs = divisorPairs(value);
+          if (pairs.length > 1) {
+            const mulKeys = pairs.map(p => simpleSynthesis(p[0])[0] + simpleSynthesis(p[1])[0]);
+            pairs = pairs.map((p, i) => ({ p, k: mulKeys[i] })).sort((a, b) => a.k - b.k).map(x => x.p);
+          }
           for (const [a, b] of pairs) {
             const [simpleA] = simpleSynthesis(a);
             if (simpleA + COST.mul >= best_cost) continue;
@@ -943,8 +1024,12 @@
           }
         
           // 5) Reduced additive search
-          if (COST.add < best_cost) {
-          const splits = [...candidateAddSplits(value)].sort((a, b) => (simpleSynthesis(a)[0] + simpleSynthesis(value - a)[0]) - (simpleSynthesis(b)[0] + simpleSynthesis(value - b)[0]));
+          if (COST.add < best_cost && !(value > _DP_LIMIT && depth <= 1)) {
+          let splits = candidateAddSplits(value);
+          if (splits.length > 1) {
+            const addKeys = splits.map(x => simpleSynthesis(x)[0] + simpleSynthesis(value - x)[0]);
+            splits = splits.map((x, i) => ({ x, k: addKeys[i] })).sort((a, b) => a.k - b.k).map(o => o.x);
+          }
           for (const a of splits) {
             const b = value - a;
             if (a===0 || b===0) continue;
@@ -959,32 +1044,20 @@
                   best_expr = ["add", exprA, exprB, null];
                 }
             }
-            // factor sharing
-            if (COST.mul + COST.add < best_cost)
-            if (a > 1 && b > 1) {
-              const g = gcd(a, b);
-              if (g <= 1) continue;
-              const gPairs = [...divisorPairs(g)].sort((p1, p2) => (simpleSynthesis(p1[0])[0] + simpleSynthesis(p1[1])[0]) - (simpleSynthesis(p2[0])[0] + simpleSynthesis(p2[1])[0]));
-              for (const [f1, f2] of gPairs) {
-                const factors = f1 === f2 ? [f1] : [f1, f2].sort((a, b) => simpleSynthesis(a)[0] - simpleSynthesis(b)[0]);
-                for (const f of factors) {
-                  if (f === 1) continue; // f=1 gives same as plain add
-                  const [simpleF] = simpleSynthesis(f);
-                  if (simpleF + COST.mul + COST.add >= best_cost) continue;
-                  const a2 = a / f, b2 = b / f;
-                  const [costF, exprF] = solve(f, depth - 1);
-                  if (costF + COST.mul + COST.add >= best_cost) continue; // optimistic check
-                  const [costA2, exprA2] = solve(a2, depth - 1);
-                  if (costF+costA2 + COST.mul+COST.add >= best_cost) continue; // optimistic check
-                const [costB2, exprB2] = solve(b2, depth - 1);
-                const total2 = costF + costA2 + costB2 + COST.mul + COST.add;
-                if (total2 < best_cost - 1e-12) {
-                  best_cost = total2;
-                  best_expr = ["mul", exprF, ["add", exprA2, exprB2, null], null];
+            // Overflow clamp exploit: when value == maxVal (belt limit),
+            // a + (b+1) overshoots then clamps back to maxVal
+            if (value === maxVal && costA + COST.add < best_cost) {
+                const b2 = b + 1;
+                if (b2 >= 1 && b2 <= maxVal && b2 !== b) {
+                    const [costB2, exprB2] = solve(b2, depth - 1);
+                    const total2 = costA + costB2 + COST.add;
+                    if (total2 < best_cost - 1e-12) {
+                      best_cost = total2;
+                      best_expr = ["add", exprA, exprB2, null];
+                    }
                 }
-                }
-              }
             }
+
           }
           }
       
@@ -1054,7 +1127,7 @@
       //============================================================================
       //  RENDER / EVAL
       //============================================================================
-      const PREC = { add: 1, sub: 1, mul: 2, pow: 3 };
+      const PREC = { add: 1, sub: 1, mul: 2, div: 2, pow: 3 };
       
       // flatten left-associative chains for display: ((a+b)+c) -> [a,b,c]
       function flattenAdd(node) {
@@ -1084,6 +1157,10 @@
           const inner = renderHTML(node[1], myPrec) + `<span class="op"> × </span>` + renderHTML(node[2], myPrec);
           return myPrec < parentPrec ? `(${inner})` : inner;
         }
+        if (op === "div") {
+          const inner = renderHTML(node[1], myPrec) + `<span class="op"> / </span>` + renderHTML(node[2], myPrec);
+          return myPrec < parentPrec ? `(${inner})` : inner;
+        }
         if (op === "pow") {
           const inner = renderHTML(node[1], myPrec + 1) + `<span class="op">^</span>` + renderHTML(node[2], myPrec);
           return myPrec < parentPrec ? `(${inner})` : inner;
@@ -1109,6 +1186,10 @@
           const inner = renderText(node[1], myPrec) + "*" + renderText(node[2], myPrec);
           return myPrec < parentPrec ? `(${inner})` : inner;
         }
+        if (op === "div") {
+          const inner = renderText(node[1], myPrec) + "/" + renderText(node[2], myPrec);
+          return myPrec < parentPrec ? `(${inner})` : inner;
+        }
         if (op === "pow") {
           const inner = renderText(node[1], myPrec + 1) + "**" + renderText(node[2], myPrec);
           return myPrec < parentPrec ? `(${inner})` : inner;
@@ -1116,14 +1197,16 @@
         return "?";
       }
       
+      function clamp(n) { return Math.min(MAX_VAL, Math.max(MIN_VAL, n)); }
       function evalNode(node) {
         const op = node[0];
         if (op === "lit") return node[3];
         if (op === "powbase") return BASE ** node[1];
-        if (op === "add") return evalNode(node[1]) + evalNode(node[2]);
-        if (op === "sub") return evalNode(node[1]) - evalNode(node[2]);
-        if (op === "mul") return evalNode(node[1]) * evalNode(node[2]);
-        if (op === "pow") return evalNode(node[1]) ** evalNode(node[2]);
+        if (op === "add") return clamp(evalNode(node[1]) + evalNode(node[2]));
+        if (op === "sub") return clamp(evalNode(node[1]) - evalNode(node[2]));
+        if (op === "mul") return clamp(evalNode(node[1]) * evalNode(node[2]));
+        if (op === "div") return clamp(Math.floor(evalNode(node[1]) / evalNode(node[2])));
+        if (op === "pow") return clamp(evalNode(node[1]) ** evalNode(node[2]));
         return NaN;
       }
       
@@ -1143,10 +1226,11 @@
           const lv = dfs(n[1]);
           const rv = dfs(n[2]);
           let v;
-          if (op === "add") v = lv + rv;
-          else if (op === "sub") v = lv - rv;
-          else if (op === "mul") v = lv * rv;
-          else if (op === "pow") v = lv ** rv;
+          if (op === "add") v = clamp(lv + rv);
+          else if (op === "sub") v = clamp(lv - rv);
+          else if (op === "mul") v = clamp(lv * rv);
+          else if (op === "div") v = clamp(Math.floor(lv / rv));
+          else if (op === "pow") v = clamp(lv ** rv);
           const key = renderText(n);
           if (!seen.has(key)) { seen.set(key, true); list.push({ kind: op, expr: renderHTML(n), value: v }); }
           return v;
@@ -1225,6 +1309,9 @@
 
   if (op === "mul")
     return evalCost(node[1]) + evalCost(node[2]) + COST.mul;
+
+  if (op === "div")
+    return evalCost(node[1]) + evalCost(node[2]) + COST.div;
 
   if (op === "pow")
     return evalCost(node[1]) + evalCost(node[2]) + COST.pow;
@@ -1415,8 +1502,6 @@
         input.addEventListener("input", () => {
           const parsed = parseFloat(input.value);
           if (!isNaN(parsed)) COST[key] = parsed;
-      
-          // optional:
           run();
         });
       });

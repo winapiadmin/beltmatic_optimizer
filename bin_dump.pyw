@@ -21,6 +21,9 @@ def int_to_bit_details(n):
 # GUI callback
 # -------------------------------------------------------
 def _do_update_bits():
+    global _debounce_timer
+    _debounce_timer = None
+
     bits_text.delete("1.0", tk.END)
 
     entry_val = entry.get()
@@ -70,7 +73,8 @@ root.grid_rowconfigure(2, weight=1)
 root.grid_columnconfigure(0, weight=1)
 root.grid_columnconfigure(1, weight=1)
 
-tk.Label(root, text="Enter integer:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+tk.Label(root, text="Enter integer:").grid(
+    row=0, column=0, sticky="w", padx=5, pady=5)
 
 entry = tk.Entry(root)
 entry.grid(row=0, column=1, sticky="ew", padx=5, pady=5)

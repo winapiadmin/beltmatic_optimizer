@@ -1,15 +1,13 @@
 # Hinting for optimization2
 from __future__ import annotations
-import math
 
 from dataclasses import dataclass
-from functools import cache
 from optimization2 import (
     BASE,
     COST,
-    ensure_optimal_table,
-    optimal_lookup,
-    parse_expr,
+    MAX_VALUE,
+    MIN_VALUE,
+    evaluate_cost,
 )
 
 
@@ -18,17 +16,18 @@ class Expr:
     value: int
     cost: float
     text: str
+    nearness: float = 0.0
 
 
 def synthesize_dp(
     target: int,
     *,
-    max_value: int = (1 << 31) - 1,
+    max_value: int = MAX_VALUE,
     max_literal: int = 26,
     beam_size: int = 200,
     iterations: int = 50,
     allow_pow: bool = True,
-) -> Expr | None:
+) -> dict[int, Expr]:
     """
     Beam-search dynamic programming arithmetic synthesizer.
 
@@ -42,7 +41,11 @@ def synthesize_dp(
     def add(expr: Expr) -> bool:
         old = best.get(expr.value)
 
-        if old is None or expr.cost < old.cost:
+        if old is None or expr.cost < old.cost - 1e-12:
+            best[expr.value] = expr
+            return True
+
+        if abs(expr.cost - old.cost) <= 1e-12 and expr.nearness < old.nearness:
             best[expr.value] = expr
             return True
 
@@ -85,7 +88,7 @@ def synthesize_dp(
     # --------------------------------------------------
 
     for _ in range(iterations):
-        if len(best) == max_value:
+        if len(best) >= max_value + 1:
             break
 
         # Most promising expressions only
@@ -105,19 +108,18 @@ def synthesize_dp(
 
         for i, a in enumerate(frontier):
             for b in frontier[i:]:
-
                 # ==========================================
                 # ADD
                 # ==========================================
 
                 nv = a.value + b.value
 
-                if nv <= max_value:
-
+                if MIN_VALUE <= nv <= max_value:
                     expr = Expr(
                         value=nv,
                         cost=a.cost + b.cost + COST["add"],
                         text=f"({a.text}+{b.text})",
+                        nearness=float(abs(a.value - b.value)),
                     )
 
                     changed |= add(expr)
@@ -128,12 +130,12 @@ def synthesize_dp(
 
                 nv = a.value * b.value
 
-                if nv <= max_value:
-
+                if MIN_VALUE <= nv <= max_value:
                     expr = Expr(
                         value=nv,
                         cost=a.cost + b.cost + COST["mul"],
                         text=f"({a.text}*{b.text})",
+                        nearness=float(abs(a.value - b.value)),
                     )
 
                     changed |= add(expr)
@@ -141,18 +143,17 @@ def synthesize_dp(
                 # ==========================================
                 # SUB
                 # ==========================================
-
-                if a.value > b.value:
-
-                    nv = a.value - b.value
-
-                    expr = Expr(
-                        value=nv,
-                        cost=a.cost + b.cost + COST["sub"],
-                        text=f"({a.text}-{b.text})",
-                    )
-
-                    changed |= add(expr)
+                if a.value != b.value:
+                    left, right = (a, b) if a.value > b.value else (b, a)
+                    nv = left.value - right.value
+                    if MIN_VALUE <= nv <= max_value:
+                        expr = Expr(
+                            value=nv,
+                            cost=left.cost + right.cost + COST["sub"],
+                            text=f"({left.text}-{right.text})",
+                            nearness=float(left.value - right.value),
+                        )
+                        changed |= add(expr)
 
                 # ==========================================
                 # POW
@@ -170,12 +171,12 @@ def synthesize_dp(
                     except OverflowError:
                         continue
 
-                    if nv <= max_value:
-
+                    if MIN_VALUE <= nv <= max_value:
                         expr = Expr(
                             value=nv,
                             cost=a.cost + b.cost + COST["pow"],
                             text=f"({a.text}**{b.text})",
+                            nearness=float(abs(a.value - b.value)),
                         )
 
                         changed |= add(expr)
@@ -186,27 +187,11 @@ def synthesize_dp(
     return best
 
 
-@cache
-def precomp(target, max_val, max_lit):
-    result2 = {
-        k: (v.cost, parse_expr(v.text))
-        for k, v in synthesize_dp(
-            target,
-            max_value=max_val,
-            max_literal=max_lit,
-            beam_size=250 * max(max_val // 1000, 1),
-            iterations=60 * max(max_val // 100, 1),
-        ).items()
-    }
-    return result2
-
-
 # ======================================================
 # Demo
 # ======================================================
 
 if __name__ == "__main__":
-    print(precomp(100, 200, 26))
     TESTS = [
         36,
         56,
@@ -225,7 +210,6 @@ if __name__ == "__main__":
     ]
 
     for target in TESTS:
-
         result = synthesize_dp(
             target,
             max_literal=26,
@@ -243,4 +227,4 @@ if __name__ == "__main__":
 
         print("cost :", round(result.cost, 4))
         print("expr :", result.text)
-        print("value:", eval(result.text))
+        print("value:", evaluate_cost(result.text)[0])

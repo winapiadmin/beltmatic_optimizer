@@ -32,7 +32,7 @@ def leastSteps(
                         newValue = cv // num
                 if newValue is not None and newValue not in visited:
                     if newValue == target:
-                        steps = [(cv, num, operator, newValue)]
+                        steps: List[Step] = [(cv, num, operator, newValue)]
                         idx = head
                         while idx >= 0:
                             val, prev_cv, prev_num, prev_op, parent_idx = step_data[idx]
@@ -67,7 +67,7 @@ def construct_exp(expr: List[Step]) -> str:
 
 def optimize_sum_with_U(target: list[int], U: int) -> str:
     total_target = sum(target)
-    limit = max(total_target, U) * 2
+    limit = max(abs(total_target), U) * 2
     powers_of_2 = []
     v = 1
     while v <= limit:
@@ -86,7 +86,7 @@ def optimize_sum_with_U(target: list[int], U: int) -> str:
 optimizations = [optimize_sum_with_U]
 if __name__ == "__main__":
 
-    def optimize(i: int, U: int):
+    def optimize(i: int, U: int) -> str:
         powers = []
         p = 0
         temp = i
