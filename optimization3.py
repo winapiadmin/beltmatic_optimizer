@@ -29,16 +29,34 @@ def synthesize_dp(
     allow_pow: bool = True,
 ) -> dict[int, Expr]:
     """
-    Beam-search dynamic programming arithmetic synthesizer.
-
-    Keeps only the most promising expressions
-    instead of exploding quadratically forever
-    like a doomed astrophysics simulation.
+    Synthesize low-cost arithmetic expressions up to a value bound using beam-search dynamic programming.
+    
+    Produces a mapping from each reachable integer value to the selected best Expr found within the search limits. The `target` parameter is used only as a heuristic for ordering the search frontier (it does not stop the search when reached).
+    
+    Parameters:
+        target (int): Value used to bias frontier selection toward expressions near the desired target.
+        max_value (int): Upper bound for generated intermediate and final expression values.
+        max_literal (int): Largest integer literal to seed initially (seeds 0..max_literal).
+        beam_size (int): Number of expressions retained in the frontier each iteration.
+        iterations (int): Maximum number of DP iterations to perform.
+        allow_pow (bool): If True, allow generation of bounded exponentiation expressions.
+    
+    Returns:
+        dict[int, Expr]: Mapping from integer value to the best (lowest-cost, tie-broken by nearness) Expr discovered for that value.
     """
 
     best: dict[int, Expr] = {}
 
     def add(expr: Expr) -> bool:
+        """
+        Insert or replace the current best expression for expr.value in the `best` mapping when expr is strictly better by cost or breaks ties by lower nearness.
+        
+        Parameters:
+            expr (Expr): Candidate expression to consider for the `best` dictionary.
+        
+        Returns:
+            bool: `True` if `expr` was inserted into or replaced the existing entry for its value, `False` otherwise.
+        """
         old = best.get(expr.value)
 
         if old is None or expr.cost < old.cost - 1e-12:

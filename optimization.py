@@ -6,6 +6,17 @@ Step = Tuple[Union[int, float], Union[int, float], str, Union[int, float]]
 def leastSteps(
     target: int, allowedNumbers: List[int], allowedOperators: List[str]
 ) -> List[Step]:
+    """
+    Finds a sequence of arithmetic operations using the provided numbers and operators that evaluates to `target`.
+    
+    Parameters:
+        target (int): The integer value to reach.
+        allowedNumbers (List[int]): Numbers that may be used as operands at each step.
+        allowedOperators (List[str]): Operators allowed between values; expected members are "+", "-", "*", and "/".
+    
+    Returns:
+        List[Step]: A list of steps describing the expression that evaluates to `target`, where each step is a tuple (start, num, op, result). Steps are ordered from the initial value to the final result. Division is allowed only when the divisor is nonzero and divides the dividend evenly (uses integer division). Returns an empty list if no sequence of allowed operations produces `target`.
+    """
     step_data = []  # (value, prev_cv, prev_num, prev_op, parent_idx)
     visited = set()
 
@@ -66,6 +77,18 @@ def construct_exp(expr: List[Step]) -> str:
 
 
 def optimize_sum_with_U(target: list[int], U: int) -> str:
+    """
+    Builds a fully parenthesized arithmetic expression that evaluates to the sum of the integers in `target`.
+    
+    The function computes total_target = sum(target), then constructs an allowed number set consisting of all integers from 1 to max(U, 1) together with powers of two up to limit = max(abs(total_target), U) * 2. It then searches for a sequence of operations using those numbers and the operators "+", "-", "*", "/" to reach total_target and returns the resulting parenthesized expression string produced by construct_exp. If no sequence is found, an empty string is returned.
+    
+    Parameters:
+        target (list[int]): List of integers whose sum is the expression target.
+        U (int): Upper bound used to include small integers 1..U in the allowed numbers set.
+    
+    Returns:
+        str: A fully parenthesized arithmetic expression that evaluates to sum(target), or an empty string if no expression is found.
+    """
     total_target = sum(target)
     limit = max(abs(total_target), U) * 2
     powers_of_2 = []
@@ -87,6 +110,16 @@ optimizations = [optimize_sum_with_U]
 if __name__ == "__main__":
 
     def optimize(i: int, U: int) -> str:
+        """
+        Builds an optimized arithmetic expression that evaluates to the integer `i`, using `U` as the optimizer parameter.
+        
+        Parameters:
+            i (int): The integer to represent; its binary decomposition determines the multiset of powers of two used.
+            U (int): Upper-bound parameter passed to the optimizer that influences allowed numbers.
+        
+        Returns:
+            expr (str): A fully parenthesized arithmetic expression string that evaluates to `i`.
+        """
         powers = []
         p = 0
         temp = i

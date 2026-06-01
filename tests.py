@@ -55,6 +55,12 @@ CONFIG_KEY = hashlib.sha256(
 
 
 def load_regression_db() -> dict:
+    """
+    Load persisted regression tracking data from DB_PATH.
+    
+    Returns:
+        db (dict): The parsed JSON object stored at DB_PATH, or an empty dict if the file does not exist.
+    """
     try:
         with open(DB_PATH, "r") as f:
             return json.load(f)
@@ -63,6 +69,15 @@ def load_regression_db() -> dict:
 
 
 def save_regression_db(db: dict) -> None:
+    """
+    Persist the regression results dictionary to the configured JSON database file.
+    
+    Parameters:
+        db (dict): Mapping of configuration keys to profile objects (each profile contains "meta" and "results") that will be written to DB_PATH.
+    
+    Notes:
+        The dictionary is serialized to JSON with an indentation of 2 spaces and keys sorted.
+    """
     with open(DB_PATH, "w") as f:
         json.dump(db, f, indent=2, sort_keys=True)
 
@@ -76,6 +91,18 @@ def update_regression_db(
     max_ext: int,
     max_val: int = optimization2.MAX_VALUE,
 ) -> None:
+    """
+    Update `results` with the observed best expression for a specific synthesis configuration.
+    
+    The function computes a string key from `target`, `disallowed`, `max_ext`, and `max_val` and uses it to record or compare an entry in `results`. If no previous entry exists, the function stores `{"cost": actual_cost, "expr": expr}`. If an entry exists, it compares `actual_cost` to the stored cost using a tolerance of 1e-12:
+    - if `actual_cost` is smaller by more than 1e-12, the stored entry is replaced (new best);
+    - if `actual_cost` is larger by more than 1e-12, the stored entry is left unchanged (regression detected);
+    - otherwise the result is considered matching the known best.
+    
+    Side effects:
+    - Mutates the `results` dict when inserting or updating an entry.
+    - Prints status messages indicating new entries, new bests, regressions, or matches.
+    """
     key = str(
         {
             "target": target,
@@ -111,7 +138,17 @@ def update_regression_db(
 
 
 def _check(target: int, expected_cost: float, *, label: str = "") -> None:
-    """Solve target, verify cost and evaluated value."""
+    """
+    Verify that synthesizing an expression for `target` yields the expected cost and value.
+    
+    Parameters:
+        target (int): Integer value to synthesize and evaluate.
+        expected_cost (float): Expected cost to compare against the synthesizer's reported cost.
+        label (str): Optional short label used in printed test output.
+    
+    Raises:
+        AssertionError: If the reported cost differs from `expected_cost` by 0.001 or more, or if the synthesized expression does not evaluate to `target`.
+    """
     cost, expr = optimization2.synthesize_optimal_with_exp(target, max_ext=26)
     val, ac = optimization2.evaluate_cost(expr)
     assert abs(cost - expected_cost) < 0.001, (
@@ -122,10 +159,18 @@ def _check(target: int, expected_cost: float, *, label: str = "") -> None:
 
 
 def test_max_value_clamp_exploit():
+    """
+    Run a targeted regression test that verifies the synthesizer produces an expression evaluating to optimization2.MAX_VALUE with the expected cost.
+    
+    This invokes the internal check for the module's MAX_VALUE benchmark, asserting the synthesized expression evaluates exactly to MAX_VALUE and its measured cost matches 0.5 within the test tolerance.
+    """
     _check(optimization2.MAX_VALUE, 0.5, label="MAX_VALUE")
 
 
 def test_clamp_non_max_value():
+    """
+    Verify the synthesizer produces an expression that evaluates to MAX_VALUE - 1 with an expected cost of 1.5.
+    """
     _check(optimization2.MAX_VALUE - 1, 1.5, label="MAX_VALUE-1")
 
 
@@ -133,7 +178,14 @@ TIMEOUT_SEC = 60  # per-base timeout
 
 
 def test_multi_base(bases) -> None:
-    """Verify correctness for BASE = 2, 3, 4, 5 and 10."""
+    """
+    Run synthesis and verification tests across multiple numeric bases and update the regression database.
+    
+    For each base in `bases`, reconfigure the optimizer, synthesize expressions for every entry in `TEST_CASES`, verify that each synthesized expression evaluates to the expected target and that the reported cost matches the recomputed cost within a tight tolerance, and record new bests or regressions in the on-disk regression database. After all bases are processed, restore the optimizer to base 2 and persist the updated database.
+    
+    Parameters:
+        bases (Iterable[int]): Sequence of numeric bases to test (e.g., [2, 3, 4, 5, 10]).
+    """
 
     db = load_regression_db()
 
